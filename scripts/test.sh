@@ -13,6 +13,7 @@ swiftc \
   "$project_dir"/Sources/Core/AppConfig.swift \
   "$project_dir"/Sources/Core/JSONNode.swift \
   "$project_dir"/Sources/Core/QuotaError.swift \
+  "$project_dir"/Sources/Core/PanelLayout.swift \
   "$project_dir"/Sources/Core/UsageModels.swift \
   "$project_dir"/Sources/Core/UsageParser.swift \
   -o "$project_dir/build/cursor-quota-tests"

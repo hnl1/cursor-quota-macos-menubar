@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pendingRefresh: PendingRefresh = .none
     private var refreshObserver: NSObjectProtocol?
     private var hookObserver: NSObjectProtocol?
+    private var layout = PanelLayout.load(from: .standard)
 
     init(client: any UsageFetching = UsageClient()) {
         self.client = client
@@ -70,7 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dashboard.onContentSizeChange = { [weak self] size in
             self?.applyDashboardSize(size)
         }
+        dashboard.onLayoutChange = { [weak self] layout in
+            self?.applyLayout(layout)
+        }
         _ = dashboard.view
+        dashboard.apply(layout: layout)
         dashboardItem.view = dashboard.view
         menu.addItem(dashboardItem)
     }
@@ -82,6 +87,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         refresh()
+    }
+
+    private func applyLayout(_ layout: PanelLayout) {
+        self.layout = layout
+        layout.save(to: .standard)
+        if let report {
+            updateMenuBar(with: report, stale: staleMessage)
+        }
     }
 
     private func configureExternalRefresh() {
@@ -249,27 +262,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         at date: Date = Date(),
         stale: String?
     ) {
-        let pool = report.headlinePool(at: date)
-        let reading = pool.reading(at: date)
-        render(.reading(reading, isStale: stale != nil))
+        let picked = layout.visible.compactMap { kind in
+            report.pools.first { $0.kind == kind }
+        }
+        let pools = picked.isEmpty
+            ? [report.headlinePool(at: date, among: Set(layout.visible))]
+            : picked
+        let readings = pools.map { $0.reading(at: date) }
+        render(.readings(readings, isStale: stale != nil))
         statusItem?.button?.setAccessibilityValue(
-            "\(pool.kind.shortTitle)剩余 \(reading.usageRemainingPercent)%，周期剩余 \(reading.timeRemainingPercent)%"
+            zip(pools, readings)
+                .map { pool, reading in
+                    "\(pool.kind.shortTitle)剩余 \(reading.usageRemainingPercent)%，"
+                        + "\(pool.kind.timeTitle) \(reading.timeRemainingPercent)%"
+                }
+                .joined(separator: "；")
         )
     }
 
     private func render(_ scene: MenuBarScene) {
         guard let button = statusItem?.button else { return }
-        let image = GaugeImage.image(for: scene)
-        button.image = image
-        switch scene {
-        case .reading(let reading, _):
-            button.title = "\(reading.usageRemainingPercent)%"
-        case .loading:
-            button.title = "…"
-        case .unavailable:
-            button.title = "—"
-        }
-        button.imagePosition = .imageLeading
+        // 圆环和百分比一起画进图里：多组并排时没法交给按钮的 title 排版。
+        button.image = GaugeImage.image(for: scene)
+        button.title = ""
+        button.imagePosition = .imageOnly
         button.imageScaling = .scaleNone
     }
 }

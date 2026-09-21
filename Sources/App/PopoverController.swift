@@ -4,6 +4,7 @@ import AppKit
 final class PopoverController: NSViewController {
     var onRefresh: (() -> Void)?
     var onContentSizeChange: ((NSSize) -> Void)?
+    var onLayoutChange: ((PanelLayout) -> Void)?
 
     private let stack = NSStackView()
     private let titleLabel = NSTextField(labelWithString: AppConfig.popoverTitle)
@@ -14,16 +15,20 @@ final class PopoverController: NSViewController {
     private let resetLabel = NSTextField(labelWithString: "")
     private let refreshButton = HoverButton(title: "刷新", symbol: "arrow.clockwise")
     private let quitButton = HoverButton(title: "退出", symbol: "power")
-    private let cursorMeter = ComparisonMeter()
-    private let apiMeter = ComparisonMeter()
-    private let grokMeter = ComparisonMeter()
-    private let divider = Divider()
-    private let grokDivider = Divider()
+    private let hint = NSTextField(labelWithString: "勾选的显示在菜单栏，箭头调整顺序")
+    private let meters: [PoolKind: ComparisonMeter] = Dictionary(
+        uniqueKeysWithValues: PoolKind.allCases.map { ($0, ComparisonMeter()) }
+    )
+    private let dividers = (1..<PoolKind.allCases.count).map { _ in Divider() }
 
     private var header: NSView!
     private var footer: NSView!
     private var meta: NSView!
     private var report: UsageReport?
+    private var layout = PanelLayout.default
+    private var placeholderMessage = "正在读取 Cursor 用量…"
+    private var busyTimer: Timer?
+    private var busyDots = 0
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: AppConfig.popoverWidth, height: 220))
@@ -55,12 +60,19 @@ final class PopoverController: NSViewController {
         view.window?.makeFirstResponder(nil)
     }
 
+    func apply(layout: PanelLayout) {
+        _ = view
+        self.layout = layout
+        refreshRows()
+    }
+
     func showLoading() {
         _ = view
         refreshButton.isEnabled = true
-        statusLabel.stringValue = "更新中"
+        setBusy(true)
         if report == nil {
-            replace(with: [header, errorRow("正在读取 Cursor 用量…"), footer])
+            placeholderMessage = "正在读取 Cursor 用量…"
+            replace(with: placeholderRows())
         }
     }
 
@@ -68,8 +80,9 @@ final class PopoverController: NSViewController {
         _ = view
         self.report = report
         refreshButton.isEnabled = true
-        statusLabel.stringValue = staleMessage == nil ? "实时" : "过期"
-        statusLabel.textColor = staleMessage == nil ? .tertiaryLabelColor : .systemOrange
+        setBusy(false)
+        statusLabel.stringValue = staleMessage == nil ? Theme.refreshText(from: date) : "过期"
+        statusLabel.textColor = staleMessage == nil ? .secondaryLabelColor : .systemOrange
         statusLabel.toolTip = staleMessage
         render(report: report, at: date)
     }
@@ -78,13 +91,48 @@ final class PopoverController: NSViewController {
         _ = view
         report = nil
         refreshButton.isEnabled = true
+        setBusy(false)
         statusLabel.stringValue = "不可用"
         statusLabel.textColor = .systemOrange
         statusLabel.toolTip = message
         resetLabel.stringValue = ""
         planLabel.stringValue = ""
         spendLabel.stringValue = ""
-        replace(with: [header, errorRow(message), footer])
+        placeholderMessage = message
+        replace(with: placeholderRows())
+    }
+
+    private func placeholderRows() -> [NSView] {
+        [header, errorRow(placeholderMessage), footer]
+    }
+
+    /// 拉取中：刷新图标转圈，右上角「更新中」后面的点循环。
+    private func setBusy(_ busy: Bool) {
+        refreshButton.setSpinning(busy)
+        busyTimer?.invalidate()
+        busyTimer = nil
+        guard busy else { return }
+        busyDots = 0
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.stringValue = "更新中"
+        let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.advanceBusyDots() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        busyTimer = timer
+    }
+
+    private func advanceBusyDots() {
+        busyDots = (busyDots + 1) % 4
+        statusLabel.stringValue = "更新中" + String(repeating: ".", count: busyDots)
+    }
+
+    private func refreshRows() {
+        if let report {
+            render(report: report, at: Date())
+        } else {
+            replace(with: placeholderRows())
+        }
     }
 
     func updateClock(at date: Date = Date()) {
@@ -93,24 +141,6 @@ final class PopoverController: NSViewController {
     }
 
     private func render(report: UsageReport, at date: Date) {
-        let cursor = report.pools.first(where: { $0.kind == .cursorModels })
-        let api = report.pools.first(where: { $0.kind == .apiModels })
-        let grok = report.pools.first(where: { $0.kind == .grokBot })
-
-        if let cursor {
-            cursorMeter.update(pool: cursor, at: date)
-        } else {
-            cursorMeter.showUnavailable(title: PoolKind.cursorModels.title)
-        }
-        if let api {
-            apiMeter.update(pool: api, at: date)
-        } else {
-            apiMeter.showUnavailable(title: PoolKind.apiModels.title)
-        }
-        if let grok {
-            grokMeter.update(pool: grok, at: date)
-        }
-
         var planParts: [String] = []
         if let name = report.plan?.name, !name.isEmpty {
             planParts.append(name)
@@ -128,38 +158,74 @@ final class PopoverController: NSViewController {
         }
         resetLabel.stringValue = Theme.resetText(from: report.resetDate)
 
-        var rows: [NSView] = [header]
-        if cursor != nil { rows.append(cursorMeter) }
-        if cursor != nil, api != nil { rows.append(divider) }
-        if api != nil { rows.append(apiMeter) }
-        if grok != nil {
-            if cursor != nil || api != nil { rows.append(grokDivider) }
-            rows.append(grokMeter)
-        }
+        var rows: [NSView] = [header, hint]
+        rows.append(contentsOf: meterRows(report: report, at: date))
         rows.append(meta)
         rows.append(footer)
         replace(with: rows)
     }
 
+    /// 三条额度行常驻，顺序跟着配置走：勾选决定是否进菜单栏，没勾的置灰。
+    private func meterRows(report: UsageReport, at date: Date) -> [NSView] {
+        var rows: [NSView] = []
+        for (index, kind) in layout.order.enumerated() {
+            guard let meter = meters[kind] else { continue }
+            meter.update(
+                kind: kind,
+                pool: report.pools.first { $0.kind == kind },
+                inMenuBar: layout.isVisible(kind),
+                canToggle: layout.canHide(kind),
+                canMoveUp: layout.canMove(kind, by: -1),
+                canMoveDown: layout.canMove(kind, by: 1),
+                at: date
+            )
+            meter.onToggle = { [weak self] isOn in
+                self?.changeLayout { $0.setVisible(isOn, for: kind) }
+            }
+            meter.onMove = { [weak self] offset in
+                self?.changeLayout { $0.move(kind, by: offset) }
+            }
+            if index > 0, dividers.indices.contains(index - 1) {
+                rows.append(dividers[index - 1])
+            }
+            rows.append(meter)
+        }
+        return rows
+    }
+
+    private func changeLayout(_ change: (inout PanelLayout) -> Void) {
+        var updated = layout
+        change(&updated)
+        guard updated != layout else {
+            refreshRows()
+            return
+        }
+        layout = updated
+        onLayoutChange?(updated)
+        refreshRows()
+    }
+
     private func configureLabels() {
         titleLabel.font = .systemFont(ofSize: 12, weight: .bold)
-        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.textColor = .labelColor
         statusLabel.font = .systemFont(ofSize: 11)
-        statusLabel.textColor = .tertiaryLabelColor
+        statusLabel.textColor = .secondaryLabelColor
         statusLabel.alignment = .right
         errorLabel.font = .systemFont(ofSize: 12)
-        errorLabel.textColor = .secondaryLabelColor
+        errorLabel.textColor = .labelColor
         errorLabel.lineBreakMode = .byWordWrapping
         errorLabel.maximumNumberOfLines = 3
         errorLabel.preferredMaxLayoutWidth = AppConfig.popoverWidth - 28
         planLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        planLabel.textColor = .secondaryLabelColor
+        planLabel.textColor = .labelColor
         spendLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        spendLabel.textColor = .secondaryLabelColor
+        spendLabel.textColor = .labelColor
         resetLabel.font = .systemFont(ofSize: 11)
-        resetLabel.textColor = .tertiaryLabelColor
+        resetLabel.textColor = .secondaryLabelColor
         configure(refreshButton, action: #selector(refreshTapped))
         configure(quitButton, action: #selector(quitTapped))
+        hint.font = .systemFont(ofSize: 11)
+        hint.textColor = .secondaryLabelColor
     }
 
     private func makeHeader() -> NSView {
@@ -258,12 +324,18 @@ final class PopoverController: NSViewController {
 @MainActor
 private final class HoverButton: NSButton {
     private var hovered = false
+    private var baseImage: NSImage?
+    private var spinTimer: Timer?
+    private var spinAngle: CGFloat = 0
 
     convenience init(title: String, symbol: String) {
         self.init(frame: .zero)
         self.title = title
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
         symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        baseImage = image?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        )
         imagePosition = .imageLeading
         imageHugsTitle = true
         imageScaling = .scaleProportionallyDown
@@ -273,9 +345,6 @@ private final class HoverButton: NSButton {
         controlSize = .small
         refusesFirstResponder = true
         focusRingType = .none
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.masksToBounds = true
     }
 
     override var intrinsicContentSize: NSSize {
@@ -285,38 +354,100 @@ private final class HoverButton: NSButton {
         return size
     }
 
+    /// 拉取期间让图标转起来。菜单跟踪时也要动，所以用 common 模式的定时器而不是动画。
+    func setSpinning(_ spinning: Bool) {
+        guard spinning != (spinTimer != nil) else { return }
+        guard spinning else {
+            spinTimer?.invalidate()
+            spinTimer = nil
+            spinAngle = 0
+            image = baseImage
+            return
+        }
+        let timer = Timer(timeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.advanceSpin() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        spinTimer = timer
+    }
+
+    private func advanceSpin() {
+        spinAngle = (spinAngle + 24).truncatingRemainder(dividingBy: 360)
+        image = rotated(baseImage, by: spinAngle)
+    }
+
+    private func rotated(_ source: NSImage?, by degrees: CGFloat) -> NSImage? {
+        guard let source else { return nil }
+        let result = NSImage(size: source.size, flipped: false) { rect in
+            let transform = NSAffineTransform()
+            transform.translateX(by: rect.midX, yBy: rect.midY)
+            transform.rotate(byDegrees: -degrees)
+            transform.translateX(by: -rect.midX, yBy: -rect.midY)
+            transform.concat()
+            source.draw(in: rect)
+            return true
+        }
+        result.isTemplate = source.isTemplate
+        return result
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
+        // 菜单窗口不是 key window，跟踪区必须用 activeAlways 才会收到进出事件。
         addTrackingArea(
             NSTrackingArea(
                 rect: bounds,
-                options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
                 owner: self,
                 userInfo: nil
             )
         )
+        syncHover()
     }
 
     override func mouseEntered(with event: NSEvent) {
-        hovered = true
-        applyHover()
+        setHovered(true)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovered(true)
     }
 
     override func mouseExited(with event: NSEvent) {
-        hovered = false
-        applyHover()
+        setHovered(false)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncHover()
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        applyHover()
+        needsDisplay = true
     }
 
-    private func applyHover() {
-        layer?.backgroundColor = hovered
-            ? NSColor.labelColor.withAlphaComponent(0.12).cgColor
-            : nil
+    /// 面板会整段重建，重建后鼠标可能已经压在按钮上，这里按真实指针位置校正一次。
+    private func syncHover() {
+        guard let window else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setHovered(bounds.contains(point))
+    }
+
+    private func setHovered(_ value: Bool) {
+        guard hovered != value else { return }
+        hovered = value
+        needsDisplay = true
+    }
+
+    // 画在自己身上，不用 layer 背景色：菜单跟踪时会重绘这一行，layer 上的底色会被抹掉。
+    override func draw(_ dirtyRect: NSRect) {
+        if hovered {
+            NSColor.labelColor.withAlphaComponent(0.12).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+        }
+        super.draw(dirtyRect)
     }
 }
 

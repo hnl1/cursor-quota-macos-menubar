@@ -27,6 +27,12 @@ enum Theme {
         return formatter.string(from: NSNumber(value: dollars)) ?? String(format: "$%.2f", dollars)
     }
 
+    static func refreshText(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("jm")
+        return "更新于 \(formatter.string(from: date))"
+    }
+
     static func resetText(from date: Date) -> String {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("MMMdjm")

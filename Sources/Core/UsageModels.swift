@@ -1,6 +1,6 @@
 import Foundation
 
-enum PoolKind: String, Sendable, Equatable {
+enum PoolKind: String, Sendable, Equatable, CaseIterable {
     case cursorModels
     case apiModels
     case grokBot
@@ -166,8 +166,13 @@ struct UsageReport: Sendable, Equatable {
         return filtered.isEmpty ? pools : filtered
     }
 
-    func headlinePool(at date: Date = Date()) -> UsagePool {
-        billingPools.max { lhs, rhs in
+    func headlinePool(
+        at date: Date = Date(),
+        among allowed: Set<PoolKind> = Set(PoolKind.allCases)
+    ) -> UsagePool {
+        let picked = billingPools.filter { allowed.contains($0.kind) }
+        let candidates = picked.isEmpty ? billingPools : picked
+        return candidates.max { lhs, rhs in
             let left = lhs.reading(at: date)
             let right = rhs.reading(at: date)
             if left.pace != right.pace {
