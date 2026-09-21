@@ -23,7 +23,6 @@ enum CursorQuotaApp {
         Retain.delegate = delegate
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
-        app.finishLaunching()
         app.run()
     }
 }

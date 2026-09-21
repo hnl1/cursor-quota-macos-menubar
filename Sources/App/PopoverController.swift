@@ -27,7 +27,6 @@ final class PopoverController: NSViewController {
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: AppConfig.popoverWidth, height: 220))
-        root.translatesAutoresizingMaskIntoConstraints = false
         view = root
         configureLabels()
         header = makeHeader()
@@ -238,8 +237,11 @@ final class PopoverController: NSViewController {
         alert.addButton(withTitle: "继续运行")
         alert.addButton(withTitle: "退出")
         NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertSecondButtonReturn {
+        let shouldQuit = alert.runModal() == .alertSecondButtonReturn
+        if shouldQuit {
             NSApp.terminate(nil)
+        } else {
+            NSApp.deactivate()
         }
     }
 }
@@ -280,7 +282,7 @@ private final class HoverButton: NSButton {
         addTrackingArea(
             NSTrackingArea(
                 rect: bounds,
-                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
                 owner: self,
                 userInfo: nil
             )
