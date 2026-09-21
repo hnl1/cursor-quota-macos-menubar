@@ -230,6 +230,15 @@ final class PopoverController: NSViewController {
     }
 
     @objc private func quitTapped() {
+        // 必须先收掉菜单：在菜单仍在跟踪时弹模态框，全屏空间的菜单栏会一直露在外面。
+        view.enclosingMenuItem?.menu?.cancelTrackingWithoutAnimation()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            self?.confirmQuit()
+        }
+    }
+
+    private func confirmQuit() {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "退出\(AppConfig.appName)？"
