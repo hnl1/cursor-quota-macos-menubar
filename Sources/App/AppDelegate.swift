@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var refreshObserver: NSObjectProtocol?
     private var hookObserver: NSObjectProtocol?
     private var layout = PanelLayout.load(from: .standard)
+    private var menuBarOptions = MenuBarOptions.load(from: .standard)
+    private var scene: MenuBarScene = .loading
 
     init(client: any UsageFetching = UsageClient()) {
         self.client = client
@@ -74,8 +76,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dashboard.onLayoutChange = { [weak self] layout in
             self?.applyLayout(layout)
         }
+        dashboard.onShowsPercentChange = { [weak self] showsPercent in
+            self?.applyShowsPercent(showsPercent)
+        }
         _ = dashboard.view
         dashboard.apply(layout: layout)
+        dashboard.apply(showsPercent: menuBarOptions.showsPercent)
         dashboardItem.view = dashboard.view
         menu.addItem(dashboardItem)
     }
@@ -95,6 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let report {
             updateMenuBar(with: report, stale: staleMessage)
         }
+    }
+
+    private func applyShowsPercent(_ showsPercent: Bool) {
+        menuBarOptions.showsPercent = showsPercent
+        menuBarOptions.save(to: .standard)
+        render(scene)
     }
 
     private func configureExternalRefresh() {
@@ -281,9 +293,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func render(_ scene: MenuBarScene) {
+        self.scene = scene
         guard let button = statusItem?.button else { return }
         // 圆环和百分比一起画进图里：多组并排时没法交给按钮的 title 排版。
-        button.image = GaugeImage.image(for: scene)
+        button.image = GaugeImage.image(for: scene, showsPercent: menuBarOptions.showsPercent)
         button.title = ""
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleNone

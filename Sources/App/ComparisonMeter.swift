@@ -1,90 +1,78 @@
 import AppKit
 
-/// 面板里的一条额度：圆环 + 名称 + 剩余百分比，行首勾选是否进菜单栏，行尾箭头调顺序。
+/// 面板里的一条额度。单击整行切换是否出现在菜单栏，按住拖动调整顺序。
 @MainActor
 final class ComparisonMeter: NSView {
-    var onToggle: ((Bool) -> Void)?
-    var onMove: ((Int) -> Void)?
+    var onToggle: (() -> Void)?
+    var onDrag: ((CGFloat) -> Void)?
+    var onDragEnd: (() -> Void)?
 
-    private let include = NSButton()
-    private let up = SquareButton()
-    private let down = SquareButton()
     private let titleLabel = NSTextField(labelWithString: "")
     private let usageLabel = NSTextField(labelWithString: "—")
     private let timeTitle = NSTextField(labelWithString: "周期剩余")
     private let timeLabel = NSTextField(labelWithString: "—")
+    private let mark = NSImageView()
 
     private var usageFraction = 0.0
     private var timeFraction = 0.0
     private var fillColor = NSColor.systemGray
     private var showsValue = false
     private var ringRect = NSRect.zero
+    private var hovered = false
+    private var lifted = false
+    private var canToggle = true
+    private var kindTitle = ""
 
     private static let ringSize: CGFloat = 44
-    private static let rowHeight: CGFloat = 52
-    /// 行尾那一列：上箭头 / 勾选框 / 下箭头
-    private static let controlWidth: CGFloat = 18
+    private static let rowHeight: CGFloat = 60
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         translatesAutoresizingMaskIntoConstraints = false
-        wantsLayer = true
 
         titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         titleLabel.textColor = .labelColor
-        usageLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        usageLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         usageLabel.alignment = .right
-        timeTitle.font = .systemFont(ofSize: 11, weight: .medium)
-        timeTitle.textColor = .labelColor
+        timeTitle.font = .systemFont(ofSize: 11, weight: .regular)
         timeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        timeLabel.textColor = .labelColor
         timeLabel.alignment = .right
 
-        include.setButtonType(.switch)
-        include.title = ""
-        include.target = self
-        include.action = #selector(toggled)
-        include.refusesFirstResponder = true
-        include.focusRingType = .none
-
-        configure(up, symbol: "chevron.up", action: #selector(moveUpTapped))
-        configure(down, symbol: "chevron.down", action: #selector(moveDownTapped))
+        mark.imageScaling = .scaleNone
+        mark.imageAlignment = .alignCenter
+        mark.contentTintColor = .labelColor
+        mark.setAccessibilityElement(false)
 
         for label in [titleLabel, usageLabel, timeTitle, timeLabel] {
             label.translatesAutoresizingMaskIntoConstraints = false
             addSubview(label)
         }
-        for button in [include, up, down] {
-            button.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(button)
-        }
+        mark.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(mark)
 
         setAccessibilityElement(true)
-        setAccessibilityRole(.group)
+        setAccessibilityRole(.button)
 
         let textLeading = Self.ringSize + 10
-        let textTrailing = -(Self.controlWidth + 8)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.rowHeight),
 
-            include.trailingAnchor.constraint(equalTo: trailingAnchor),
-            include.centerYAnchor.constraint(equalTo: centerYAnchor),
-            up.centerXAnchor.constraint(equalTo: include.centerXAnchor),
-            up.bottomAnchor.constraint(equalTo: include.topAnchor, constant: -1),
-            down.centerXAnchor.constraint(equalTo: include.centerXAnchor),
-            down.topAnchor.constraint(equalTo: include.bottomAnchor, constant: 1),
+            mark.trailingAnchor.constraint(equalTo: trailingAnchor),
+            mark.centerYAnchor.constraint(equalTo: centerYAnchor),
+            mark.widthAnchor.constraint(equalToConstant: 22),
+            mark.heightAnchor.constraint(equalToConstant: 22),
 
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: textLeading),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            usageLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: textTrailing),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            usageLabel.trailingAnchor.constraint(equalTo: mark.leadingAnchor, constant: -4),
             usageLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             usageLabel.leadingAnchor.constraint(
                 greaterThanOrEqualTo: titleLabel.trailingAnchor,
                 constant: 8
             ),
             timeTitle.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            timeTitle.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-            timeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: textTrailing),
+            timeTitle.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            timeLabel.trailingAnchor.constraint(equalTo: usageLabel.trailingAnchor),
             timeLabel.centerYAnchor.constraint(equalTo: timeTitle.centerYAnchor),
             timeLabel.leadingAnchor.constraint(
                 greaterThanOrEqualTo: timeTitle.trailingAnchor,
@@ -109,7 +97,14 @@ final class ComparisonMeter: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
+        if hovered || lifted {
+            let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let fill = lifted
+                ? NSColor.white.withAlphaComponent(dark ? 0.16 : 0.78)
+                : NSColor.labelColor.withAlphaComponent(0.08)
+            fill.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        }
         RingGauge.draw(
             in: ringRect,
             usageRemaining: usageFraction,
@@ -118,110 +113,14 @@ final class ComparisonMeter: NSView {
             track: Theme.trackFill(appearance: effectiveAppearance),
             lineWidth: 5,
             showsValue: showsValue,
-            tickWidth: 0.7
+            tickWidth: 0.7,
+            tickFromCenter: true
         )
     }
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
-
-    func update(
-        kind: PoolKind,
-        pool: UsagePool?,
-        inMenuBar: Bool,
-        canToggle: Bool,
-        canMoveUp: Bool,
-        canMoveDown: Bool,
-        at date: Date
-    ) {
-        include.state = inMenuBar ? .on : .off
-        include.isEnabled = canToggle
-        include.setAccessibilityLabel("在菜单栏显示\(kind.shortTitle)")
-        setEnabled(up, canMoveUp, label: "上移\(kind.shortTitle)")
-        setEnabled(down, canMoveDown, label: "下移\(kind.shortTitle)")
-        titleLabel.stringValue = kind.title
-        timeTitle.stringValue = kind.timeTitle
-
-        guard let pool else {
-            showUnavailable(kind: kind)
-            return
-        }
-        let reading = pool.reading(at: date)
-        showsValue = true
-        usageFraction = reading.usageRemainingFraction
-        timeFraction = reading.timeRemainingFraction
-        // 勾选只决定是否上菜单栏，面板里三条都照常显示。
-        fillColor = Theme.paceColor(reading.pace)
-        usageLabel.stringValue = "\(reading.usageRemainingPercent)%"
-        usageLabel.textColor = fillColor
-        titleLabel.textColor = .labelColor
-        timeLabel.stringValue = "\(reading.timeRemainingPercent)%"
-        setAccessibilityLabel(kind.title)
-        setAccessibilityValue(
-            "剩余 \(reading.usageRemainingPercent)%，\(kind.timeTitle) \(reading.timeRemainingPercent)%"
-                + (inMenuBar ? "，在菜单栏显示" : "，未在菜单栏显示")
-        )
-        needsLayout = true
-        needsDisplay = true
-    }
-
-    private func showUnavailable(kind: PoolKind) {
-        showsValue = false
-        usageFraction = 0
-        timeFraction = 0
-        fillColor = .systemGray
-        titleLabel.textColor = .secondaryLabelColor
-        usageLabel.stringValue = "—"
-        usageLabel.textColor = .tertiaryLabelColor
-        timeLabel.stringValue = "—"
-        setAccessibilityLabel(kind.title)
-        setAccessibilityValue("暂无数据")
-        needsDisplay = true
-    }
-
-    private func configure(_ button: SquareButton, symbol: String, action: Selector) {
-        button.title = ""
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
-        button.imagePosition = .imageOnly
-        button.isBordered = false
-        button.controlSize = .small
-        button.target = self
-        button.action = action
-        button.refusesFirstResponder = true
-        button.focusRingType = .none
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: Self.controlWidth - 2),
-            button.heightAnchor.constraint(equalToConstant: Self.controlWidth - 2)
-        ])
-    }
-
-    private func setEnabled(_ button: SquareButton, _ enabled: Bool, label: String) {
-        button.isEnabled = enabled
-        button.contentTintColor = enabled ? .labelColor : .tertiaryLabelColor
-        button.setAccessibilityLabel(label)
-        button.needsDisplay = true
-    }
-
-    @objc private func toggled() {
-        onToggle?(include.state == .on)
-    }
-
-    @objc private func moveUpTapped() {
-        onMove?(-1)
-    }
-
-    @objc private func moveDownTapped() {
-        onMove?(1)
-    }
-}
-
-/// 和勾选框同尺寸的小方按钮：圆角底 + 描边，悬停加深。
-@MainActor
-private final class SquareButton: NSButton {
-    private var hovered = false
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -256,30 +155,121 @@ private final class SquareButton: NSButton {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        applyQuietColors()
         needsDisplay = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        let start = event.locationInWindow
+        var dragged = false
+        while true {
+            guard let next = window.nextEvent(
+                matching: [.leftMouseDragged, .leftMouseUp],
+                until: .distantFuture,
+                inMode: .eventTracking,
+                dequeue: true
+            ) else { break }
+            if next.type == .leftMouseUp {
+                lifted = false
+                needsDisplay = true
+                if dragged {
+                    onDragEnd?()
+                } else if canToggle {
+                    onToggle?()
+                }
+                NSCursor.pointingHand.set()
+                break
+            }
+            let deltaX = next.locationInWindow.x - start.x
+            let deltaY = next.locationInWindow.y - start.y
+            if !dragged, hypot(deltaX, deltaY) < 4 { continue }
+            if !dragged {
+                dragged = true
+                lifted = true
+                NSCursor.closedHand.set()
+            }
+            onDrag?(deltaY)
+            window.displayIfNeeded()
+        }
+    }
+
+    func update(
+        kind: PoolKind,
+        pool: UsagePool?,
+        inMenuBar: Bool,
+        canToggle: Bool,
+        at date: Date
+    ) {
+        self.canToggle = canToggle
+        kindTitle = kind.title
+        timeTitle.stringValue = kind.timeTitle
+        mark.image = inMenuBar ? Self.checkImage : nil
+        mark.setAccessibilityLabel(inMenuBar ? "在菜单栏显示\(kind.shortTitle)" : "")
+
+        guard let pool else {
+            showUnavailable(kind: kind)
+            return
+        }
+        let reading = pool.reading(at: date)
+        showsValue = true
+        usageFraction = reading.usageRemainingFraction
+        timeFraction = reading.timeRemainingFraction
+        fillColor = Theme.paceColor(reading.pace)
+        usageLabel.stringValue = "\(reading.usageRemainingPercent)%"
+        usageLabel.textColor = fillColor
+        titleLabel.stringValue = kind.title
+        titleLabel.textColor = .labelColor
+        timeLabel.stringValue = "\(reading.timeRemainingPercent)%"
+        applyQuietColors()
+        setAccessibilityLabel(kind.title)
+        setAccessibilityValue(
+            "剩余 \(reading.usageRemainingPercent)%，\(kind.timeTitle) \(reading.timeRemainingPercent)%"
+                + (inMenuBar ? "，在菜单栏显示" : "，未在菜单栏显示")
+        )
+        needsLayout = true
+        needsDisplay = true
+    }
+
+    private func showUnavailable(kind: PoolKind) {
+        showsValue = false
+        usageFraction = 0
+        timeFraction = 0
+        fillColor = .systemGray
+        titleLabel.stringValue = kind.title
+        titleLabel.textColor = Theme.secondaryText(effectiveAppearance)
+        usageLabel.stringValue = "—"
+        usageLabel.textColor = Theme.secondaryText(effectiveAppearance)
+        timeLabel.stringValue = "—"
+        applyQuietColors()
+        setAccessibilityLabel(kind.title)
+        setAccessibilityValue("暂无数据")
+        needsDisplay = true
+    }
+
+    private func applyQuietColors() {
+        let color = Theme.tertiaryText(effectiveAppearance)
+        timeTitle.textColor = color
+        timeLabel.textColor = color
     }
 
     private func syncHover() {
         guard let window else { return }
-        setHovered(bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setHovered(bounds.contains(point))
     }
 
     private func setHovered(_ value: Bool) {
-        guard hovered != value, isEnabled else { return }
+        guard hovered != value else { return }
         hovered = value
         needsDisplay = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
-        let fill = isEnabled
-            ? NSColor.labelColor.withAlphaComponent(hovered ? 0.22 : 0.1)
-            : NSColor.labelColor.withAlphaComponent(0.04)
-        fill.setFill()
-        box.fill()
-        NSColor.labelColor.withAlphaComponent(isEnabled ? 0.28 : 0.12).setStroke()
-        box.lineWidth = 1
-        box.stroke()
-        super.draw(dirtyRect)
-    }
+    private static let checkImage: NSImage? = {
+        let image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
+        image?.isTemplate = true
+        return image?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        )
+    }()
 }

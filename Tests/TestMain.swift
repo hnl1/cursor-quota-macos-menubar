@@ -7,7 +7,8 @@ enum TestMain {
         let suites: [() -> Int] = [
             UsageModelsTests.run,
             UsageParserTests.run,
-            PanelLayoutTests.run
+            PanelLayoutTests.run,
+            MenuBarOptionsTests.run
         ]
         for suite in suites {
             failures += suite()

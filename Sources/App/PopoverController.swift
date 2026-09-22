@@ -5,38 +5,46 @@ final class PopoverController: NSViewController {
     var onRefresh: (() -> Void)?
     var onContentSizeChange: ((NSSize) -> Void)?
     var onLayoutChange: ((PanelLayout) -> Void)?
+    var onShowsPercentChange: ((Bool) -> Void)?
 
     private let stack = NSStackView()
-    private let titleLabel = NSTextField(labelWithString: AppConfig.popoverTitle)
-    private let statusLabel = NSTextField(labelWithString: "")
+    private let titleLabel = NSTextField(labelWithString: "Cursor 额度")
     private let errorLabel = NSTextField(labelWithString: "")
     private let planLabel = NSTextField(labelWithString: "")
     private let spendLabel = NSTextField(labelWithString: "")
-    private let resetLabel = NSTextField(labelWithString: "")
-    private let refreshButton = HoverButton(title: "刷新", symbol: "arrow.clockwise")
-    private let quitButton = HoverButton(title: "退出", symbol: "power")
-    private let hint = NSTextField(labelWithString: "勾选的显示在菜单栏，箭头调整顺序")
+    private let percentButton = HoverButton(title: "菜单栏 %", symbol: "checkmark", pointSize: 13)
+    private let refreshButton = HoverButton(title: "--:--:--", symbol: "arrow.clockwise", pointSize: 13)
+    private let restartButton = HoverButton(
+        title: "重启",
+        symbol: "arrow.triangle.2.circlepath",
+        pointSize: 13,
+        imageOnly: true
+    )
+    private let quitButton = HoverButton(title: "退出", symbol: "power", pointSize: 13, imageOnly: true)
     private let meters: [PoolKind: ComparisonMeter] = Dictionary(
         uniqueKeysWithValues: PoolKind.allCases.map { ($0, ComparisonMeter()) }
     )
-    private let dividers = (1..<PoolKind.allCases.count).map { _ in Divider() }
-
     private var header: NSView!
     private var footer: NSView!
-    private var meta: NSView!
     private var report: UsageReport?
     private var layout = PanelLayout.default
+    private var showsPercent = true
+    private var refreshedAt: Date?
+    private var clockAlert = false
     private var placeholderMessage = "正在读取 Cursor 用量…"
-    private var busyTimer: Timer?
-    private var busyDots = 0
+    private var dragKind: PoolKind?
+    private var dragStartFrames: [PoolKind: NSRect] = [:]
+    private var dragFromIndex = 0
+    private var dragToIndex = 0
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: AppConfig.popoverWidth, height: 220))
+        let root = MenuSurface(frame: NSRect(x: 0, y: 0, width: AppConfig.popoverWidth, height: 220))
+        root.onAppearanceChange = { [weak self] in self?.styleChrome() }
         view = root
         configureLabels()
         header = makeHeader()
-        meta = makeMeta()
         footer = makeFooter()
+        refreshButton.setSpinImage(Self.spinRingImage())
 
         stack.orientation = .vertical
         stack.alignment = .width
@@ -60,10 +68,21 @@ final class PopoverController: NSViewController {
         view.window?.makeFirstResponder(nil)
     }
 
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        MenuTip.cancel()
+    }
+
     func apply(layout: PanelLayout) {
         _ = view
         self.layout = layout
         refreshRows()
+    }
+
+    func apply(showsPercent: Bool) {
+        _ = view
+        self.showsPercent = showsPercent
+        styleChrome()
     }
 
     func showLoading() {
@@ -81,9 +100,9 @@ final class PopoverController: NSViewController {
         self.report = report
         refreshButton.isEnabled = true
         setBusy(false)
-        statusLabel.stringValue = staleMessage == nil ? Theme.refreshText(from: date) : "过期"
-        statusLabel.textColor = staleMessage == nil ? .secondaryLabelColor : .systemOrange
-        statusLabel.toolTip = staleMessage
+        refreshedAt = date
+        clockAlert = staleMessage != nil
+        refreshButton.toolTip = staleMessage ?? "刷新"
         render(report: report, at: date)
     }
 
@@ -92,13 +111,13 @@ final class PopoverController: NSViewController {
         report = nil
         refreshButton.isEnabled = true
         setBusy(false)
-        statusLabel.stringValue = "不可用"
-        statusLabel.textColor = .systemOrange
-        statusLabel.toolTip = message
-        resetLabel.stringValue = ""
+        refreshedAt = nil
+        clockAlert = true
+        refreshButton.toolTip = message
         planLabel.stringValue = ""
-        spendLabel.stringValue = ""
+        spendLabel.attributedStringValue = NSAttributedString()
         placeholderMessage = message
+        styleChrome()
         replace(with: placeholderRows())
     }
 
@@ -106,25 +125,9 @@ final class PopoverController: NSViewController {
         [header, errorRow(placeholderMessage), footer]
     }
 
-    /// 拉取中：刷新图标转圈，右上角「更新中」后面的点循环。
+    /// 拉取中只转刷新图标，时间仍停在上次成功的时刻。
     private func setBusy(_ busy: Bool) {
         refreshButton.setSpinning(busy)
-        busyTimer?.invalidate()
-        busyTimer = nil
-        guard busy else { return }
-        busyDots = 0
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.stringValue = "更新中"
-        let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.advanceBusyDots() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        busyTimer = timer
-    }
-
-    private func advanceBusyDots() {
-        busyDots = (busyDots + 1) % 4
-        statusLabel.stringValue = "更新中" + String(repeating: ".", count: busyDots)
     }
 
     private func refreshRows() {
@@ -149,48 +152,120 @@ final class PopoverController: NSViewController {
             planParts.append(price)
         }
         planLabel.stringValue = planParts.joined(separator: " · ")
+        spendLabel.attributedStringValue = spendLine(report: report)
+        styleChrome()
 
-        if let spend = report.spend, spend.hasLimit {
-            spendLabel.stringValue =
-                "已用 \(Theme.currency(spend.includedDollars)) / \(Theme.currency(spend.limitDollars))"
-        } else {
-            spendLabel.stringValue = ""
-        }
-        resetLabel.stringValue = Theme.resetText(from: report.resetDate)
-
-        var rows: [NSView] = [header, hint]
+        var rows: [NSView] = [header]
         rows.append(contentsOf: meterRows(report: report, at: date))
-        rows.append(meta)
         rows.append(footer)
         replace(with: rows)
+    }
+
+    private func spendLine(report: UsageReport) -> NSAttributedString {
+        let line = NSMutableAttributedString()
+        let quiet = Theme.secondaryText(view.effectiveAppearance)
+        let primary = NSColor.labelColor
+        let quietFont = NSFont.systemFont(ofSize: 11)
+        let primaryFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+        if let spend = report.spend, spend.hasLimit {
+            line.append(NSAttributedString(
+                string: "已用 \(Theme.currency(spend.includedDollars)) / \(Theme.currency(spend.limitDollars))",
+                attributes: [.font: primaryFont, .foregroundColor: primary]
+            ))
+            line.append(NSAttributedString(
+                string: " · ",
+                attributes: [.font: quietFont, .foregroundColor: quiet]
+            ))
+        }
+        line.append(NSAttributedString(
+            string: Theme.footerReset(from: report.resetDate),
+            attributes: [.font: quietFont, .foregroundColor: quiet]
+        ))
+        return line
     }
 
     /// 三条额度行常驻，顺序跟着配置走：勾选决定是否进菜单栏，没勾的置灰。
     private func meterRows(report: UsageReport, at date: Date) -> [NSView] {
         var rows: [NSView] = []
-        for (index, kind) in layout.order.enumerated() {
+        for kind in layout.order {
             guard let meter = meters[kind] else { continue }
             meter.update(
                 kind: kind,
                 pool: report.pools.first { $0.kind == kind },
                 inMenuBar: layout.isVisible(kind),
-                canToggle: layout.canHide(kind),
-                canMoveUp: layout.canMove(kind, by: -1),
-                canMoveDown: layout.canMove(kind, by: 1),
+                canToggle: layout.canHide(kind) || !layout.isVisible(kind),
                 at: date
             )
-            meter.onToggle = { [weak self] isOn in
-                self?.changeLayout { $0.setVisible(isOn, for: kind) }
+            meter.onToggle = { [weak self] in
+                guard let self else { return }
+                let visible = !self.layout.isVisible(kind)
+                self.changeLayout { $0.setVisible(visible, for: kind) }
             }
-            meter.onMove = { [weak self] offset in
-                self?.changeLayout { $0.move(kind, by: offset) }
+            meter.onDrag = { [weak self] deltaY in
+                self?.updateRowDrag(kind, deltaY: deltaY)
             }
-            if index > 0, dividers.indices.contains(index - 1) {
-                rows.append(dividers[index - 1])
+            meter.onDragEnd = { [weak self] in
+                self?.finishRowDrag(kind)
             }
             rows.append(meter)
         }
         return rows
+    }
+
+    private func updateRowDrag(_ kind: PoolKind, deltaY: CGFloat) {
+        guard let frame = dragStartFrames[kind] ?? startRowDrag(kind) else { return }
+        let order = layout.order
+        let height = frame.height
+        let minY = dragStartFrames.values.map(\.minY).min() ?? frame.minY
+        let maxY = dragStartFrames.values.map(\.maxY).max() ?? frame.maxY
+        let proposed = min(max(frame.minY + deltaY, minY), maxY - height)
+        guard let meter = meters[kind] else { return }
+        meter.frame.origin.y = proposed
+        let visualMid = proposed + height / 2
+        var target = 0
+        for (index, item) in order.enumerated() where index != dragFromIndex {
+            let mid = dragStartFrames[item]?.midY ?? visualMid
+            if mid > visualMid { target += 1 }
+        }
+        dragToIndex = target
+        for (index, item) in order.enumerated() {
+            guard item != kind, let origin = dragStartFrames[item], let view = meters[item] else { continue }
+            var shift: CGFloat = 0
+            if dragToIndex > dragFromIndex, index > dragFromIndex, index <= dragToIndex {
+                shift = height
+            }
+            if dragToIndex < dragFromIndex, index >= dragToIndex, index < dragFromIndex {
+                shift = -height
+            }
+            view.frame.origin.y = origin.minY + shift
+        }
+    }
+
+    private func startRowDrag(_ kind: PoolKind) -> NSRect? {
+        dragKind = kind
+        dragFromIndex = layout.order.firstIndex(of: kind) ?? 0
+        dragToIndex = dragFromIndex
+        dragStartFrames = Dictionary(uniqueKeysWithValues: layout.order.compactMap { item in
+            guard let meter = meters[item] else { return nil }
+            return (item, meter.frame)
+        })
+        return dragStartFrames[kind]
+    }
+
+    private func finishRowDrag(_ kind: PoolKind) {
+        let steps = dragToIndex - dragFromIndex
+        dragKind = nil
+        dragStartFrames = [:]
+        guard steps != 0 else {
+            refreshRows()
+            return
+        }
+        changeLayout { layout in
+            let direction = steps > 0 ? 1 : -1
+            for _ in 0..<abs(steps) {
+                layout.move(kind, by: direction)
+            }
+        }
     }
 
     private func changeLayout(_ change: (inout PanelLayout) -> Void) {
@@ -206,63 +281,110 @@ final class PopoverController: NSViewController {
     }
 
     private func configureLabels() {
-        titleLabel.font = .systemFont(ofSize: 12, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .labelColor
-        statusLabel.font = .systemFont(ofSize: 11)
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.alignment = .right
         errorLabel.font = .systemFont(ofSize: 12)
         errorLabel.textColor = .labelColor
         errorLabel.lineBreakMode = .byWordWrapping
         errorLabel.maximumNumberOfLines = 3
         errorLabel.preferredMaxLayoutWidth = AppConfig.popoverWidth - 28
-        planLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        planLabel.font = .systemFont(ofSize: 12, weight: .medium)
         planLabel.textColor = .labelColor
-        spendLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        spendLabel.textColor = .labelColor
-        resetLabel.font = .systemFont(ofSize: 11)
-        resetLabel.textColor = .secondaryLabelColor
+        spendLabel.font = .systemFont(ofSize: 11)
+        configure(percentButton, action: #selector(percentTapped))
         configure(refreshButton, action: #selector(refreshTapped))
+        configure(restartButton, action: #selector(restartTapped))
         configure(quitButton, action: #selector(quitTapped))
-        hint.font = .systemFont(ofSize: 11)
-        hint.textColor = .secondaryLabelColor
+        refreshButton.toolTip = "刷新"
+        restartButton.toolTip = "重启"
+        quitButton.toolTip = "退出"
+        styleChrome()
     }
 
     private func makeHeader() -> NSView {
-        let row = NSView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        row.addSubview(titleLabel)
-        row.addSubview(statusLabel)
-        NSLayoutConstraint.activate([
-            row.heightAnchor.constraint(equalToConstant: 16),
-            titleLabel.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            statusLabel.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            statusLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            statusLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: titleLabel.trailingAnchor,
-                constant: 8
-            )
-        ])
-        return row
-    }
-
-    private func makeMeta() -> NSView {
-        let column = NSStackView(views: [planLabel, spendLabel])
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = 2
-        return column
-    }
-
-    private func makeFooter() -> NSView {
-        let row = NSStackView(views: [resetLabel, NSView(), refreshButton, quitButton])
+        let spacer = flexibleSpacer()
+        let row = NSStackView(views: [titleLabel, spacer, percentButton, refreshButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 8
         return row
+    }
+
+    private func makeFooter() -> NSView {
+        let copy = NSStackView(views: [planLabel, spendLabel])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 2
+        let actions = NSStackView(views: [restartButton, quitButton])
+        actions.orientation = .horizontal
+        actions.alignment = .bottom
+        actions.spacing = 2
+        let row = NSStackView(views: [copy, flexibleSpacer(), actions])
+        row.orientation = .horizontal
+        row.alignment = .bottom
+        row.spacing = 8
+        return row
+    }
+
+    private func flexibleSpacer() -> NSView {
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return spacer
+    }
+
+    private func styleChrome() {
+        let secondary = Theme.secondaryText(view.effectiveAppearance)
+        let mark = showsPercent
+            ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: "菜单栏 %")?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
+            : nil
+        percentButton.image = mark ?? Self.emptyPercentMark
+        percentButton.contentTintColor = secondary
+        percentButton.attributedTitle = NSAttributedString(
+            string: "菜单栏 %",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: secondary
+            ]
+        )
+        let clock = refreshedAt.map(Theme.refreshClock(from:)) ?? (clockAlert ? "不可用" : "--:--:--")
+        let clockColor = clockAlert ? NSColor.systemOrange : secondary
+        refreshButton.contentTintColor = clockColor
+        refreshButton.attributedTitle = NSAttributedString(
+            string: clock,
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: clockColor
+            ]
+        )
+    }
+
+    private static let emptyPercentMark: NSImage = {
+        let image = NSImage(size: NSSize(width: 13, height: 13))
+        image.isTemplate = true
+        return image
+    }()
+
+    private static func spinRingImage() -> NSImage {
+        let side: CGFloat = 13
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
+            let path = NSBezierPath()
+            path.appendArc(
+                withCenter: NSPoint(x: side / 2, y: side / 2),
+                radius: 4.15,
+                startAngle: 40,
+                endAngle: 320,
+                clockwise: false
+            )
+            path.lineWidth = 1.1
+            path.lineCapStyle = .round
+            NSColor.labelColor.setStroke()
+            path.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     private func errorRow(_ message: String) -> NSView {
@@ -295,6 +417,38 @@ final class PopoverController: NSViewController {
         onRefresh?()
     }
 
+    @objc private func percentTapped() {
+        showsPercent.toggle()
+        styleChrome()
+        onShowsPercentChange?(showsPercent)
+    }
+
+    @objc private func restartTapped() {
+        view.enclosingMenuItem?.menu?.cancelTrackingWithoutAnimation()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            self?.relaunch()
+        }
+    }
+
+    /// 当前进程还在时，直接打开同一个包只会把现有实例调到前面。
+    /// 先要求系统再起一份，成功后再退出这一份。
+    private func relaunch() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { app, error in
+            let launched = app != nil && error == nil
+            Task { @MainActor in
+                guard launched else { return }
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
     @objc private func quitTapped() {
         // 必须先收掉菜单：在菜单仍在跟踪时弹模态框，全屏空间的菜单栏会一直露在外面。
         view.enclosingMenuItem?.menu?.cancelTrackingWithoutAnimation()
@@ -325,18 +479,26 @@ final class PopoverController: NSViewController {
 private final class HoverButton: NSButton {
     private var hovered = false
     private var baseImage: NSImage?
+    private var idleImage: NSImage?
+    private var spinImage: NSImage?
     private var spinTimer: Timer?
     private var spinAngle: CGFloat = 0
 
-    convenience init(title: String, symbol: String) {
+    convenience init(
+        title: String,
+        symbol: String,
+        pointSize: CGFloat = 11,
+        imageOnly: Bool = false
+    ) {
         self.init(frame: .zero)
-        self.title = title
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-        baseImage = image?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-        )
-        imagePosition = .imageLeading
+        self.title = imageOnly ? "" : title
+        let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
+        symbolConfiguration = configuration
+        image = symbolImage?.withSymbolConfiguration(configuration)
+        baseImage = image
+        idleImage = image
+        imagePosition = imageOnly ? .imageOnly : .imageLeading
         imageHugsTitle = true
         imageScaling = .scaleProportionallyDown
         contentTintColor = .labelColor
@@ -345,6 +507,11 @@ private final class HoverButton: NSButton {
         controlSize = .small
         refusesFirstResponder = true
         focusRingType = .none
+        setAccessibilityLabel(title)
+    }
+
+    func setSpinImage(_ image: NSImage?) {
+        spinImage = image
     }
 
     override var intrinsicContentSize: NSSize {
@@ -361,8 +528,13 @@ private final class HoverButton: NSButton {
             spinTimer?.invalidate()
             spinTimer = nil
             spinAngle = 0
-            image = baseImage
+            baseImage = idleImage
+            image = idleImage
             return
+        }
+        if let spinImage {
+            baseImage = spinImage
+            image = spinImage
         }
         let timer = Timer(timeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.advanceSpin() }
@@ -389,6 +561,10 @@ private final class HoverButton: NSButton {
         }
         result.isTemplate = source.isTemplate
         return result
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)
     }
 
     override func updateTrackingAreas() {
@@ -418,6 +594,11 @@ private final class HoverButton: NSButton {
         setHovered(false)
     }
 
+    override func mouseDown(with event: NSEvent) {
+        MenuTip.cancel()
+        super.mouseDown(with: event)
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         syncHover()
@@ -439,6 +620,11 @@ private final class HoverButton: NSButton {
         guard hovered != value else { return }
         hovered = value
         needsDisplay = true
+        if value {
+            MenuTip.schedule(from: self)
+        } else {
+            MenuTip.cancel(from: self)
+        }
     }
 
     // 画在自己身上，不用 layer 背景色：菜单跟踪时会重绘这一行，layer 上的底色会被抹掉。
@@ -451,27 +637,109 @@ private final class HoverButton: NSButton {
     }
 }
 
+/// 系统 tooltip 只在默认运行循环里出现，菜单跟踪时不会显示。
 @MainActor
-private final class Divider: NSView {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: 8).isActive = true
+private enum MenuTip {
+    private static var panel: NSWindow?
+    private static var timer: Timer?
+    private static weak var owner: NSView?
+
+    static func schedule(from view: NSView) {
+        cancel()
+        guard let text = view.toolTip, !text.isEmpty else { return }
+        owner = view
+        let timer = Timer(timeInterval: 0.45, repeats: false) { [weak view] _ in
+            Task { @MainActor in
+                guard let view else { return }
+                show(view.toolTip ?? "", from: view)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is unavailable")
+    static func cancel(from view: NSView? = nil) {
+        if let view, owner != nil, owner !== view { return }
+        timer?.invalidate()
+        timer = nil
+        panel?.orderOut(nil)
+        panel = nil
+        owner = nil
     }
 
+    private static func show(_ text: String, from view: NSView) {
+        guard view === owner, !text.isEmpty, let host = view.window else { return }
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .labelColor
+        label.maximumNumberOfLines = 4
+        label.preferredMaxLayoutWidth = 220
+        let content = TipBackground()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -8),
+            label.topAnchor.constraint(equalTo: content.topAnchor, constant: 4),
+            label.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -4)
+        ])
+        let size = content.fittingSize
+        content.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        window.contentView = content
+
+        let button = host.convertToScreen(view.convert(view.bounds, to: nil))
+        var origin = NSPoint(
+            x: button.midX - size.width / 2,
+            y: button.minY - size.height - 4
+        )
+        if let screen = host.screen ?? NSScreen.main {
+            let visible = screen.visibleFrame
+            if origin.y < visible.minY {
+                origin.y = button.maxY + 4
+            }
+            origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
+        }
+        window.setFrameOrigin(origin)
+        window.orderFrontRegardless()
+        panel = window
+    }
+}
+
+@MainActor
+private final class TipBackground: NSView {
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        NSColor.separatorColor.setStroke()
-        let y = bounds.midY
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: bounds.minX, y: y))
-        path.line(to: NSPoint(x: bounds.maxX, y: y))
-        path.lineWidth = 1
-        path.stroke()
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let fill = dark
+            ? NSColor.black.withAlphaComponent(0.88)
+            : NSColor.white.withAlphaComponent(0.96)
+        fill.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5).fill()
+    }
+}
+
+@MainActor
+private final class MenuSurface: NSView {
+    var onAppearanceChange: (() -> Void)?
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChange?()
     }
 }

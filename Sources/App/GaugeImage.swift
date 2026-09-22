@@ -15,8 +15,10 @@ enum GaugeImage {
         static let tickOutset: CGFloat = 1.4
         /// 圆环和它自己的百分比之间
         static let textGap: CGFloat = 1
-        /// 相邻两组之间
-        static let entryGap: CGFloat = 7
+        /// 相邻两组之间。带百分比时留出文字后的空隙。
+        static let entryGap: CGFloat = 6
+        /// 不显示百分比时，圆环挨得更近。
+        static let ringGap: CGFloat = 1
         static let dotGap: CGFloat = 3
     }
 
@@ -32,28 +34,30 @@ enum GaugeImage {
         .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     }
 
-    static func image(for scene: MenuBarScene) -> NSImage {
-        let entries = entries(for: scene)
+    static func image(for scene: MenuBarScene, showsPercent: Bool = true) -> NSImage {
+        let entries = entries(for: scene, showsPercent: showsPercent)
         let widths = entries.map { textWidth($0.text) }
         let stale = if case .readings(_, let isStale) = scene { isStale } else { false }
 
+        let gap = widths.contains { $0 > 0 } ? Layout.entryGap : Layout.ringGap
         var width: CGFloat = 0
         for (index, textWidth) in widths.enumerated() {
-            if index > 0 { width += Layout.entryGap }
-            width += Layout.ring + Layout.textGap + textWidth
+            if index > 0 { width += gap }
+            width += Layout.ring
+            if textWidth > 0 { width += Layout.textGap + textWidth }
         }
         if stale { width += Layout.dotGap + Layout.staleDot }
 
         let size = NSSize(width: max(width, Layout.ring), height: Layout.height)
         let image = NSImage(size: size, flipped: false) { bounds in
-            draw(entries: entries, widths: widths, stale: stale, in: bounds)
+            draw(entries: entries, widths: widths, gap: gap, stale: stale, in: bounds)
             return true
         }
         image.isTemplate = false
         return image
     }
 
-    private static func entries(for scene: MenuBarScene) -> [Entry] {
+    private static func entries(for scene: MenuBarScene, showsPercent: Bool) -> [Entry] {
         switch scene {
         case .loading:
             [placeholder("…")]
@@ -64,7 +68,7 @@ enum GaugeImage {
                 ? [placeholder("—")]
                 : readings.map { reading in
                     Entry(
-                        text: "\(reading.usageRemainingPercent)%",
+                        text: showsPercent ? "\(reading.usageRemainingPercent)%" : "",
                         usageRemaining: reading.usageRemainingFraction,
                         timeRemaining: reading.timeRemainingFraction,
                         color: Theme.paceColor(reading.pace),
@@ -78,11 +82,17 @@ enum GaugeImage {
         Entry(text: text, usageRemaining: 0, timeRemaining: 0, color: .systemGray, showsValue: false)
     }
 
-    private static func draw(entries: [Entry], widths: [CGFloat], stale: Bool, in bounds: NSRect) {
+    private static func draw(
+        entries: [Entry],
+        widths: [CGFloat],
+        gap: CGFloat,
+        stale: Bool,
+        in bounds: NSRect
+    ) {
         let track = NSColor.labelColor.withAlphaComponent(0.16)
         var x = bounds.minX
         for (index, entry) in entries.enumerated() {
-            if index > 0 { x += Layout.entryGap }
+            if index > 0 { x += gap }
             let ring = NSRect(
                 x: x,
                 y: bounds.midY - Layout.ring / 2,
@@ -97,13 +107,17 @@ enum GaugeImage {
                 track: track,
                 lineWidth: Layout.lineWidth,
                 showsValue: entry.showsValue,
-                tickOutset: Layout.tickOutset
+                tickOutset: Layout.tickOutset,
+                tickFromCenter: true
             )
-            x += Layout.ring + Layout.textGap
-            let text = attributed(entry.text)
-            let textSize = text.size()
-            text.draw(at: NSPoint(x: x, y: bounds.midY - textSize.height / 2))
-            x += widths[index]
+            x += Layout.ring
+            if widths[index] > 0 {
+                x += Layout.textGap
+                let text = attributed(entry.text)
+                let textSize = text.size()
+                text.draw(at: NSPoint(x: x, y: bounds.midY - textSize.height / 2))
+                x += widths[index]
+            }
         }
 
         guard stale else { return }

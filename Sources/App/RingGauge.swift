@@ -10,7 +10,8 @@ enum RingGauge {
         lineWidth: CGFloat,
         showsValue: Bool,
         tickOutset: CGFloat? = nil,
-        tickWidth: CGFloat? = nil
+        tickWidth: CGFloat? = nil,
+        tickFromCenter: Bool = false
     ) {
         guard rect.width > 1, rect.height > 1 else { return }
         let tickPad = tickOutset ?? max(1.8, lineWidth * 0.55)
@@ -35,13 +36,13 @@ enum RingGauge {
         let radians = (90 - 360 * time) * .pi / 180
         let dx = Foundation.cos(radians)
         let dy = Foundation.sin(radians)
-        let inner = radius - lineWidth / 2 - tickPad
-        let outer = radius + lineWidth / 2 + tickPad
+        let inner = tickFromCenter ? 0 : radius - lineWidth / 2 - tickPad
+        let outer = tickFromCenter ? radius + lineWidth / 2 : radius + lineWidth / 2 + tickPad
         let tick = NSBezierPath()
         tick.move(to: NSPoint(x: center.x + inner * dx, y: center.y + inner * dy))
         tick.line(to: NSPoint(x: center.x + outer * dx, y: center.y + outer * dy))
         tick.lineWidth = tickWidth ?? max(1, lineWidth * 0.28)
-        tick.lineCapStyle = .round
+        tick.lineCapStyle = tickFromCenter ? .butt : .round
         NSColor.labelColor.withAlphaComponent(0.78).setStroke()
         tick.stroke()
     }
