@@ -8,6 +8,8 @@ enum AppConfig {
     static let popoverWidth: CGFloat = 308
     static let refreshInterval: TimeInterval = 5 * 60
     static let clockInterval: TimeInterval = 60
+    /// 菜单栏橙点：数据时间早于现在超过这段时间才出现。
+    static let staleAfter: TimeInterval = 30 * 60
     static let hookRefreshDelay: TimeInterval = 3
     static let refreshNotification = Notification.Name("com.hnl1.cursorquota.refresh")
     static let hookNotification = Notification.Name("com.hnl1.cursorquota.nudge")

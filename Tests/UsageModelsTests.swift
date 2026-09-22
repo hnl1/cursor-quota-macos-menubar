@@ -78,6 +78,17 @@ enum UsageModelsTests {
             withGrok?.resetDate == end,
             "reset date stays on the billing window"
         )
+
+        let fetched = TestSupport.date(2_000_000)
+        let aged = UsageReport(pools: [loose], fetchedAt: fetched)
+        failed += TestSupport.expect(
+            aged?.isStale(at: fetched.addingTimeInterval(AppConfig.staleAfter)) == false,
+            "data exactly 30 minutes old is not stale"
+        )
+        failed += TestSupport.expect(
+            aged?.isStale(at: fetched.addingTimeInterval(AppConfig.staleAfter + 1)) == true,
+            "data older than 30 minutes is stale"
+        )
         return failed
     }
 }

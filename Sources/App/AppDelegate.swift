@@ -99,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         self.layout = layout
         layout.save(to: .standard)
         if let report {
-            updateMenuBar(with: report, stale: staleMessage)
+            updateMenuBar(with: report)
         }
     }
 
@@ -238,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         dashboard.updateClock(at: date)
         if let report {
-            updateMenuBar(with: report, at: date, stale: staleMessage)
+            updateMenuBar(with: report, at: date)
         }
     }
 
@@ -246,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         self.report = report
         staleMessage = nil
         dashboard.show(report: report)
-        updateMenuBar(with: report, stale: nil)
+        updateMenuBar(with: report)
     }
 
     private func apply(error: Error) {
@@ -255,7 +255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if keepLast, let report, report.hasActivePool() {
             staleMessage = message
             dashboard.show(report: report, staleMessage: message)
-            updateMenuBar(with: report, stale: message)
+            updateMenuBar(with: report)
         } else {
             showUnavailable(message)
         }
@@ -269,11 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem?.button?.setAccessibilityValue("用量不可用")
     }
 
-    private func updateMenuBar(
-        with report: UsageReport,
-        at date: Date = Date(),
-        stale: String?
-    ) {
+    private func updateMenuBar(with report: UsageReport, at date: Date = Date()) {
         let picked = layout.visible.compactMap { kind in
             report.pools.first { $0.kind == kind }
         }
@@ -281,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ? [report.headlinePool(at: date, among: Set(layout.visible))]
             : picked
         let readings = pools.map { $0.reading(at: date) }
-        render(.readings(readings, isStale: stale != nil))
+        render(.readings(readings, isStale: report.isStale(at: date)))
         statusItem?.button?.setAccessibilityValue(
             zip(pools, readings)
                 .map { pool, reading in

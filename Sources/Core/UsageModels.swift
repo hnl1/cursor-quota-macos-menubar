@@ -186,6 +186,10 @@ struct UsageReport: Sendable, Equatable {
         billingPools.contains { $0.isActive(at: date) }
     }
 
+    func isStale(at date: Date = Date()) -> Bool {
+        date.timeIntervalSince(fetchedAt) > AppConfig.staleAfter
+    }
+
     var resetDate: Date {
         billingPools.map(\.resetsAt).min() ?? pools[0].resetsAt
     }
