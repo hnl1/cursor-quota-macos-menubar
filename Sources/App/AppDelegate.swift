@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configureMenu()
         configureExternalRefresh()
         scheduleTimers()
+        LoginItem.restoreIfNeeded()
         refresh()
         NSApp.deactivate()
     }

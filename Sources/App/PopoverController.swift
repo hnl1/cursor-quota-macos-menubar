@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 @MainActor
 final class PopoverController: NSViewController {
@@ -13,6 +14,7 @@ final class PopoverController: NSViewController {
     private let planLabel = NSTextField(labelWithString: "")
     private let spendLabel = NSTextField(labelWithString: "")
     private let percentButton = HoverButton(title: "菜单栏 %", symbol: "checkmark", pointSize: 13)
+    private let loginButton = HoverButton(title: "开机自启", symbol: "checkmark", pointSize: 13)
     private let refreshButton = HoverButton(title: "--:--:--", symbol: "arrow.clockwise", pointSize: 13)
     private let restartButton = HoverButton(
         title: "重启",
@@ -26,9 +28,12 @@ final class PopoverController: NSViewController {
     )
     private var header: NSView!
     private var footer: NSView!
+    private var planStack: NSStackView!
+    private var footerPins: [NSLayoutConstraint] = []
     private var report: UsageReport?
     private var layout = PanelLayout.default
     private var showsPercent = true
+    private var loginHint = "登录后自动打开"
     private var refreshedAt: Date?
     private var clockAlert = false
     private var placeholderMessage = "正在读取 Cursor 用量…"
@@ -116,6 +121,7 @@ final class PopoverController: NSViewController {
         refreshButton.toolTip = message
         planLabel.stringValue = ""
         spendLabel.attributedStringValue = NSAttributedString()
+        refreshFooterCopy()
         placeholderMessage = message
         styleChrome()
         replace(with: placeholderRows())
@@ -153,6 +159,7 @@ final class PopoverController: NSViewController {
         }
         planLabel.stringValue = planParts.joined(separator: " · ")
         spendLabel.attributedStringValue = spendLine(report: report)
+        refreshFooterCopy()
         styleChrome()
 
         var rows: [NSView] = [header]
@@ -292,6 +299,9 @@ final class PopoverController: NSViewController {
         planLabel.textColor = .labelColor
         spendLabel.font = .systemFont(ofSize: 11)
         configure(percentButton, action: #selector(percentTapped))
+        configure(loginButton, action: #selector(loginTapped))
+        percentButton.imagePosition = .imageTrailing
+        loginButton.imagePosition = .imageTrailing
         configure(refreshButton, action: #selector(refreshTapped))
         configure(restartButton, action: #selector(restartTapped))
         configure(quitButton, action: #selector(quitTapped))
@@ -303,7 +313,7 @@ final class PopoverController: NSViewController {
 
     private func makeHeader() -> NSView {
         let spacer = flexibleSpacer()
-        let row = NSStackView(views: [titleLabel, spacer, percentButton, refreshButton])
+        let row = NSStackView(views: [titleLabel, spacer, refreshButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 8
@@ -315,15 +325,54 @@ final class PopoverController: NSViewController {
         copy.orientation = .vertical
         copy.alignment = .leading
         copy.spacing = 2
+        copy.detachesHiddenViews = true
+        let switches = NSStackView(views: [percentButton, loginButton])
+        switches.orientation = .horizontal
+        switches.alignment = .centerY
+        switches.spacing = 2
+        switches.clipsToBounds = false
         let actions = NSStackView(views: [restartButton, quitButton])
         actions.orientation = .horizontal
-        actions.alignment = .bottom
+        actions.alignment = .centerY
         actions.spacing = 2
-        let row = NSStackView(views: [copy, flexibleSpacer(), actions])
-        row.orientation = .horizontal
-        row.alignment = .bottom
-        row.spacing = 8
-        return row
+        let controls = NSStackView(views: [switches, flexibleSpacer(), actions])
+        controls.orientation = .horizontal
+        controls.alignment = .centerY
+        controls.spacing = 8
+        controls.clipsToBounds = false
+        // 按钮文字比套餐行往右偏一个标题内边距。把这组开关拉回来，字的左缘才对齐。
+        let align = switches.leadingAnchor.constraint(
+            equalTo: controls.leadingAnchor,
+            constant: -percentButton.titleLeadingInset
+        )
+        align.priority = .required
+        align.isActive = true
+        let column = NSStackView(views: [copy, controls])
+        column.orientation = .vertical
+        column.alignment = .width
+        column.spacing = 8
+        column.detachesHiddenViews = true
+        // 菜单给底栏的左右贴边优先级只有 250/260，打不过内容自己的宽度，
+        // 底栏会缩到按钮那一截并贴在右边。这里用必需约束把它拉满。
+        NSLayoutConstraint.activate([
+            copy.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            copy.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            controls.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            controls.trailingAnchor.constraint(equalTo: column.trailingAnchor)
+        ])
+        planStack = copy
+        refreshFooterCopy()
+        return column
+    }
+
+    /// 每次重建都会把底栏移出层级，上次的贴边约束会跟着失效，所以要重新钉上。
+    private func pinFooterIfNeeded() {
+        NSLayoutConstraint.deactivate(footerPins)
+        footerPins = [
+            footer.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: stack.trailingAnchor)
+        ]
+        NSLayoutConstraint.activate(footerPins)
     }
 
     private func flexibleSpacer() -> NSView {
@@ -333,21 +382,17 @@ final class PopoverController: NSViewController {
         return spacer
     }
 
+    private func refreshFooterCopy() {
+        planLabel.isHidden = planLabel.stringValue.isEmpty
+        spendLabel.isHidden = spendLabel.attributedStringValue.length == 0
+        planStack?.isHidden = planLabel.isHidden && spendLabel.isHidden
+    }
+
     private func styleChrome() {
         let secondary = Theme.secondaryText(view.effectiveAppearance)
-        let mark = showsPercent
-            ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: "菜单栏 %")?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
-            : nil
-        percentButton.image = mark ?? Self.emptyPercentMark
-        percentButton.contentTintColor = secondary
-        percentButton.attributedTitle = NSAttributedString(
-            string: "菜单栏 %",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: secondary
-            ]
-        )
+        styleToggle(percentButton, title: "菜单栏 %", on: showsPercent)
+        styleToggle(loginButton, title: "开机自启", on: LoginItem.isEnabled)
+        loginButton.toolTip = loginHint
         let clock = refreshedAt.map(Theme.refreshClock(from:)) ?? (clockAlert ? "不可用" : "--:--:--")
         let clockColor = clockAlert ? NSColor.systemOrange : secondary
         refreshButton.contentTintColor = clockColor
@@ -360,7 +405,24 @@ final class PopoverController: NSViewController {
         )
     }
 
-    private static let emptyPercentMark: NSImage = {
+    private func styleToggle(_ button: HoverButton, title: String, on: Bool) {
+        let secondary = Theme.secondaryText(view.effectiveAppearance)
+        let mark = on
+            ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: title)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
+            : nil
+        button.image = mark ?? Self.emptyToggleMark
+        button.contentTintColor = secondary
+        button.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: secondary
+            ]
+        )
+    }
+
+    private static let emptyToggleMark: NSImage = {
         let image = NSImage(size: NSSize(width: 13, height: 13))
         image.isTemplate = true
         return image
@@ -406,6 +468,7 @@ final class PopoverController: NSViewController {
         for view in views {
             stack.addArrangedSubview(view)
         }
+        pinFooterIfNeeded()
         view.layoutSubtreeIfNeeded()
         let height = max(118, stack.fittingSize.height + 24)
         let size = NSSize(width: AppConfig.popoverWidth, height: height)
@@ -421,6 +484,28 @@ final class PopoverController: NSViewController {
         showsPercent.toggle()
         styleChrome()
         onShowsPercentChange?(showsPercent)
+    }
+
+    @objc private func loginTapped() {
+        let turningOn = !LoginItem.isEnabled
+        switch LoginItem.setEnabled(turningOn) {
+        case .enabled:
+            loginHint = "登录后自动打开"
+        case .disabled:
+            loginHint = "登录后自动打开"
+        case .needsApproval:
+            loginHint = "需要在系统设置的登录项里允许"
+            styleChrome()
+            view.enclosingMenuItem?.menu?.cancelTrackingWithoutAnimation()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(150))
+                SMAppService.openSystemSettingsLoginItems()
+            }
+            return
+        case .failed:
+            loginHint = "暂时无法设置开机自启"
+        }
+        styleChrome()
     }
 
     @objc private func restartTapped() {
@@ -508,6 +593,14 @@ private final class HoverButton: NSButton {
         refusesFirstResponder = true
         focusRingType = .none
         setAccessibilityLabel(title)
+    }
+
+    /// 标题左缘相对按钮边界的距离。用来和上面的文字左对齐。
+    var titleLeadingInset: CGFloat {
+        guard let cell = cell as? NSButtonCell else { return 0 }
+        let size = intrinsicContentSize
+        guard size.width > 1, size.height > 1 else { return 0 }
+        return cell.titleRect(forBounds: NSRect(origin: .zero, size: size)).minX
     }
 
     func setSpinImage(_ image: NSImage?) {

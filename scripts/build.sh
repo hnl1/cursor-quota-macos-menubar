@@ -37,6 +37,7 @@ swiftc \
   -module-cache-path "$project_dir/build/ModuleCache" \
   -framework AppKit \
   -framework Foundation \
+  -framework ServiceManagement \
   -lsqlite3 \
   "${source_files[@]}" \
   -o "$binary_dir/CursorQuota"

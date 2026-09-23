@@ -5,9 +5,15 @@ struct PanelLayout: Sendable, Equatable {
     private(set) var order: [PoolKind]
     private(set) var hidden: Set<PoolKind>
 
+    /// 没改过勾选时，菜单栏只显示第三方模型（其他模型）。
+    static let defaultHidden: Set<PoolKind> = [.cursorModels, .grokBot]
+
     static let `default` = PanelLayout()
 
-    init(order: [PoolKind] = PoolKind.allCases, hidden: Set<PoolKind> = []) {
+    init(
+        order: [PoolKind] = PoolKind.allCases,
+        hidden: Set<PoolKind> = PanelLayout.defaultHidden
+    ) {
         var sorted: [PoolKind] = []
         for kind in order where !sorted.contains(kind) {
             sorted.append(kind)
@@ -17,7 +23,7 @@ struct PanelLayout: Sendable, Equatable {
         }
         self.order = sorted
         // 全部隐藏没有意义，这种数据视为没设置过。
-        self.hidden = hidden.count >= sorted.count ? [] : hidden
+        self.hidden = hidden.count >= sorted.count ? Self.defaultHidden : hidden
     }
 
     var visible: [PoolKind] {

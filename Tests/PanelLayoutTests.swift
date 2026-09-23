@@ -3,7 +3,7 @@ import Foundation
 enum PanelLayoutTests {
     static func run() -> Int {
         var failures = 0
-        failures += defaultsToAllVisible()
+        failures += defaultsToThirdPartyOnly()
         failures += fillsMissingKinds()
         failures += keepsAtLeastOneVisible()
         failures += movesWithinBounds()
@@ -11,12 +11,17 @@ enum PanelLayoutTests {
         return failures
     }
 
-    private static func defaultsToAllVisible() -> Int {
+    private static func defaultsToThirdPartyOnly() -> Int {
         let layout = PanelLayout.default
-        return TestSupport.expect(
-            layout.visible == PoolKind.allCases,
-            "默认应按声明顺序展示全部额度，实际 \(layout.visible)"
+        var failures = TestSupport.expect(
+            layout.visible == [.apiModels],
+            "默认应只勾选其他模型，实际 \(layout.visible)"
         )
+        failures += TestSupport.expect(
+            layout.order == PoolKind.allCases,
+            "默认顺序应保持声明顺序，实际 \(layout.order)"
+        )
+        return failures
     }
 
     private static func fillsMissingKinds() -> Int {
@@ -33,7 +38,7 @@ enum PanelLayoutTests {
     }
 
     private static func keepsAtLeastOneVisible() -> Int {
-        var layout = PanelLayout.default
+        var layout = PanelLayout(order: PoolKind.allCases, hidden: [])
         layout.setVisible(false, for: .apiModels)
         layout.setVisible(false, for: .grokBot)
         var failures = TestSupport.expect(
@@ -47,8 +52,8 @@ enum PanelLayoutTests {
         )
         failures += TestSupport.expect(
             PanelLayout(order: PoolKind.allCases, hidden: Set(PoolKind.allCases)).visible
-                == PoolKind.allCases,
-            "全部隐藏的存档应回退为全部展示"
+                == [.apiModels],
+            "全部隐藏的存档应回退为默认，只留其他模型"
         )
         return failures
     }
@@ -82,7 +87,7 @@ enum PanelLayoutTests {
             PanelLayout.load(from: defaults) == .default,
             "空存档应读成默认布局"
         )
-        var layout = PanelLayout.default
+        var layout = PanelLayout(order: PoolKind.allCases, hidden: [])
         layout.move(.grokBot, by: -1)
         layout.setVisible(false, for: .apiModels)
         layout.save(to: defaults)
