@@ -51,14 +51,14 @@
 3. 能编译 Swift 6 的工具链（Xcode 或 Command Line Tools）
 
 ```sh
-./install.sh
+./scripts/install.sh
 ```
 
 会编译 `Cursor Quota.app` 到 `~/Applications` 并打开，同时写入用户级 Cursor hook。不需要 API key。
 
 ### Cursor hook
 
-`./install.sh` 会写入：
+`./scripts/install.sh` 会写入：
 
 - `~/.cursor/hooks/nudge-cursor-quota.sh`
 - `~/.cursor/hooks.json`（`stop`、`sessionEnd`）

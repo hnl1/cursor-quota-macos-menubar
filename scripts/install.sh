@@ -1,13 +1,13 @@
 #!/bin/zsh
 set -euo pipefail
 
-project_dir=${0:A:h}
+project_dir=${0:A:h:h}
 app_name="Cursor Quota"
 install_dir=${CURSOR_QUOTA_INSTALL_DIR:-"$HOME/Applications"}
 launch_after_install=1
 
 if (( $# > 1 )) || [[ ${1:-} != "" && ${1:-} != "--no-launch" ]]; then
-  print -u2 -- "用法: ./install.sh [--no-launch]"
+  print -u2 -- "用法: ./scripts/install.sh [--no-launch]"
   exit 64
 fi
 
