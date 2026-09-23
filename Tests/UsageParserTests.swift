@@ -33,9 +33,33 @@ enum UsageParserTests {
                 "api pool maps to other models"
             )
             failed += TestSupport.expect(report.spend?.includedCents == 754, "included spend is 754 cents")
+            failed += TestSupport.expect(report.spend?.totalCents == 754, "total spend is 754 cents")
             failed += TestSupport.expect(report.spend?.limitCents == 40000, "limit is 40000 cents")
         } catch {
             failed += TestSupport.expect(false, "live payload should parse: \(error)")
+        }
+
+        let overIncluded = """
+        {
+          "billingCycleStart": "1789961823000",
+          "billingCycleEnd": "1792553823000",
+          "planUsage": {
+            "totalSpend": 62120,
+            "includedSpend": 40000,
+            "bonusSpend": 22120,
+            "limit": 40000,
+            "autoPercentUsed": 17.63,
+            "apiPercentUsed": 36.93
+          },
+          "enabled": true
+        }
+        """.data(using: .utf8)!
+        do {
+            let report = try UsageParser.parseUsage(overIncluded, at: now)
+            failed += TestSupport.expect(report.spend?.totalCents == 62120, "total spend stays above the included cap")
+            failed += TestSupport.expect(report.spend?.includedCents == 40000, "included spend stays capped")
+        } catch {
+            failed += TestSupport.expect(false, "over-included payload should parse: \(error)")
         }
 
         let wrapped = """
@@ -59,6 +83,7 @@ enum UsageParserTests {
                 report.pools.contains(where: { $0.kind == .cursorModels && $0.usedPercent == 12.5 }),
                 "wrapped auto pool maps"
             )
+            failed += TestSupport.expect(report.spend?.totalCents == nil, "missing totalSpend stays unset")
         } catch {
             failed += TestSupport.expect(false, "wrapped payload should parse: \(error)")
         }

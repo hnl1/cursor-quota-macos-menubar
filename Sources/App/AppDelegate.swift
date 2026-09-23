@@ -80,9 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dashboard.onShowsPercentChange = { [weak self] showsPercent in
             self?.applyShowsPercent(showsPercent)
         }
+        dashboard.onShowsUsedChange = { [weak self] showsUsed in
+            self?.applyShowsUsed(showsUsed)
+        }
         _ = dashboard.view
         dashboard.apply(layout: layout)
         dashboard.apply(showsPercent: menuBarOptions.showsPercent)
+        dashboard.apply(showsUsed: menuBarOptions.showsUsed)
         dashboardItem.view = dashboard.view
         menu.addItem(dashboardItem)
     }
@@ -106,6 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func applyShowsPercent(_ showsPercent: Bool) {
         menuBarOptions.showsPercent = showsPercent
+        menuBarOptions.save(to: .standard)
+        render(scene)
+    }
+
+    private func applyShowsUsed(_ showsUsed: Bool) {
+        menuBarOptions.showsUsed = showsUsed
         menuBarOptions.save(to: .standard)
         render(scene)
     }
@@ -282,8 +292,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem?.button?.setAccessibilityValue(
             zip(pools, readings)
                 .map { pool, reading in
-                    "\(pool.kind.shortTitle)剩余 \(reading.usageRemainingPercent)%，"
-                        + "\(pool.kind.timeTitle) \(reading.timeRemainingPercent)%"
+                    let used = menuBarOptions.showsUsed
+                    let usage = used ? reading.usageUsedPercent : reading.usageRemainingPercent
+                    let time = used ? reading.timeElapsedPercent : reading.timeRemainingPercent
+                    return "\(pool.kind.shortTitle)\(used ? "已用" : "剩余") \(usage)%，"
+                        + "\(pool.kind.timeTitle(showsUsed: used)) \(time)%"
                 }
                 .joined(separator: "；")
         )
@@ -293,7 +306,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         self.scene = scene
         guard let button = statusItem?.button else { return }
         // 圆环和百分比一起画进图里：多组并排时没法交给按钮的 title 排版。
-        button.image = GaugeImage.image(for: scene, showsPercent: menuBarOptions.showsPercent)
+        button.image = GaugeImage.image(
+            for: scene,
+            showsPercent: menuBarOptions.showsPercent,
+            showsUsed: menuBarOptions.showsUsed
+        )
         button.title = ""
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleNone

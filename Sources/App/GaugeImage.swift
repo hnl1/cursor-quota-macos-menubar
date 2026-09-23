@@ -34,8 +34,8 @@ enum GaugeImage {
         .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     }
 
-    static func image(for scene: MenuBarScene, showsPercent: Bool = true) -> NSImage {
-        let entries = entries(for: scene, showsPercent: showsPercent)
+    static func image(for scene: MenuBarScene, showsPercent: Bool = false, showsUsed: Bool = true) -> NSImage {
+        let entries = entries(for: scene, showsPercent: showsPercent, showsUsed: showsUsed)
         let widths = entries.map { textWidth($0.text) }
         let stale = if case .readings(_, let isStale) = scene { isStale } else { false }
 
@@ -50,14 +50,14 @@ enum GaugeImage {
 
         let size = NSSize(width: max(width, Layout.ring), height: Layout.height)
         let image = NSImage(size: size, flipped: false) { bounds in
-            draw(entries: entries, widths: widths, gap: gap, stale: stale, in: bounds)
+            draw(entries: entries, widths: widths, gap: gap, stale: stale, showsUsed: showsUsed, in: bounds)
             return true
         }
         image.isTemplate = false
         return image
     }
 
-    private static func entries(for scene: MenuBarScene, showsPercent: Bool) -> [Entry] {
+    private static func entries(for scene: MenuBarScene, showsPercent: Bool, showsUsed: Bool) -> [Entry] {
         switch scene {
         case .loading:
             [placeholder("…")]
@@ -68,7 +68,9 @@ enum GaugeImage {
                 ? [placeholder("—")]
                 : readings.map { reading in
                     Entry(
-                        text: showsPercent ? "\(reading.usageRemainingPercent)%" : "",
+                        text: showsPercent
+                            ? "\(showsUsed ? reading.usageUsedPercent : reading.usageRemainingPercent)%"
+                            : "",
                         usageRemaining: reading.usageRemainingFraction,
                         timeRemaining: reading.timeRemainingFraction,
                         color: Theme.paceColor(reading.pace),
@@ -87,6 +89,7 @@ enum GaugeImage {
         widths: [CGFloat],
         gap: CGFloat,
         stale: Bool,
+        showsUsed: Bool,
         in bounds: NSRect
     ) {
         let track = NSColor.labelColor.withAlphaComponent(0.16)
@@ -107,6 +110,7 @@ enum GaugeImage {
                 track: track,
                 lineWidth: Layout.lineWidth,
                 showsValue: entry.showsValue,
+                showsUsed: showsUsed,
                 tickOutset: Layout.tickOutset,
                 tickFromCenter: true
             )

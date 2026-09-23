@@ -5,6 +5,8 @@ enum MenuBarOptionsTests {
         var failures = 0
         failures += defaultsToShowingPercent()
         failures += roundTripsHiddenPercent()
+        failures += defaultsToShowingUsed()
+        failures += roundTripsRemaining()
         return failures
     }
 
@@ -14,9 +16,10 @@ enum MenuBarOptionsTests {
             return TestSupport.expect(false, "无法创建测试用 UserDefaults")
         }
         defaults.removePersistentDomain(forName: suite)
+        let loaded = MenuBarOptions.load(from: defaults)
         let failures = TestSupport.expect(
-            MenuBarOptions.load(from: defaults) == .default,
-            "没存过时应默认在菜单栏显示百分比"
+            loaded == .default && loaded.showsPercent == false,
+            "没存过时菜单栏百分比应默认关闭"
         )
         defaults.removePersistentDomain(forName: suite)
         return failures
@@ -28,16 +31,47 @@ enum MenuBarOptionsTests {
             return TestSupport.expect(false, "无法创建测试用 UserDefaults")
         }
         defaults.removePersistentDomain(forName: suite)
-        let hidden = MenuBarOptions(showsPercent: false)
-        hidden.save(to: defaults)
+        let shown = MenuBarOptions(showsPercent: true, showsUsed: true)
+        shown.save(to: defaults)
         var failures = TestSupport.expect(
-            MenuBarOptions.load(from: defaults) == hidden,
-            "关闭百分比后应能读回，实际 \(MenuBarOptions.load(from: defaults))"
+            MenuBarOptions.load(from: defaults) == shown,
+            "打开百分比后应能读回，实际 \(MenuBarOptions.load(from: defaults))"
         )
         MenuBarOptions.default.save(to: defaults)
         failures += TestSupport.expect(
-            MenuBarOptions.load(from: defaults).showsPercent,
-            "重新打开后应读回显示百分比"
+            MenuBarOptions.load(from: defaults).showsPercent == false,
+            "回到默认后菜单栏百分比应关闭"
+        )
+        defaults.removePersistentDomain(forName: suite)
+        return failures
+    }
+
+    private static func defaultsToShowingUsed() -> Int {
+        let suite = "com.hnl1.cursorquota.tests.menubar.used"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return TestSupport.expect(false, "无法创建测试用 UserDefaults")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(false, forKey: "menubar.showsPercent")
+        let failures = TestSupport.expect(
+            MenuBarOptions.load(from: defaults).showsUsed,
+            "没存过展示方向时应默认展示已用"
+        )
+        defaults.removePersistentDomain(forName: suite)
+        return failures
+    }
+
+    private static func roundTripsRemaining() -> Int {
+        let suite = "com.hnl1.cursorquota.tests.menubar.used"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return TestSupport.expect(false, "无法创建测试用 UserDefaults")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let remaining = MenuBarOptions(showsPercent: true, showsUsed: false)
+        remaining.save(to: defaults)
+        let failures = TestSupport.expect(
+            MenuBarOptions.load(from: defaults) == remaining,
+            "切到展示剩余后应能读回，实际 \(MenuBarOptions.load(from: defaults))"
         )
         defaults.removePersistentDomain(forName: suite)
         return failures

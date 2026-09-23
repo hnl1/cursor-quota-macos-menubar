@@ -7,32 +7,27 @@ final class PopoverController: NSViewController {
     var onContentSizeChange: ((NSSize) -> Void)?
     var onLayoutChange: ((PanelLayout) -> Void)?
     var onShowsPercentChange: ((Bool) -> Void)?
+    var onShowsUsedChange: ((Bool) -> Void)?
 
     private let stack = NSStackView()
     private let titleLabel = NSTextField(labelWithString: "Cursor 额度")
     private let errorLabel = NSTextField(labelWithString: "")
-    private let planLabel = NSTextField(labelWithString: "")
     private let spendLabel = NSTextField(labelWithString: "")
-    private let percentButton = HoverButton(title: "菜单栏 %", symbol: "checkmark", pointSize: 13)
+    private let percentButton = HoverButton(title: "菜单栏%", symbol: "checkmark", pointSize: 13)
+    private let usageButton = HoverButton(title: "展示已用", symbol: "checkmark", pointSize: 13)
     private let loginButton = HoverButton(title: "开机自启", symbol: "checkmark", pointSize: 13)
     private let refreshButton = HoverButton(title: "--:--:--", symbol: "arrow.clockwise", pointSize: 13)
-    private let restartButton = HoverButton(
-        title: "重启",
-        symbol: "arrow.triangle.2.circlepath",
-        pointSize: 13,
-        imageOnly: true
-    )
     private let quitButton = HoverButton(title: "退出", symbol: "power", pointSize: 13, imageOnly: true)
     private let meters: [PoolKind: ComparisonMeter] = Dictionary(
         uniqueKeysWithValues: PoolKind.allCases.map { ($0, ComparisonMeter()) }
     )
     private var header: NSView!
     private var footer: NSView!
-    private var planStack: NSStackView!
-    private var footerPins: [NSLayoutConstraint] = []
+    private var edgePins: [NSLayoutConstraint] = []
     private var report: UsageReport?
     private var layout = PanelLayout.default
-    private var showsPercent = true
+    private var showsPercent = false
+    private var showsUsed = true
     private var loginHint = "登录后自动打开"
     private var refreshedAt: Date?
     private var clockAlert = false
@@ -90,6 +85,13 @@ final class PopoverController: NSViewController {
         styleChrome()
     }
 
+    func apply(showsUsed: Bool) {
+        _ = view
+        self.showsUsed = showsUsed
+        styleChrome()
+        refreshRows()
+    }
+
     func showLoading() {
         _ = view
         refreshButton.isEnabled = true
@@ -119,8 +121,8 @@ final class PopoverController: NSViewController {
         refreshedAt = nil
         clockAlert = true
         refreshButton.toolTip = message
-        planLabel.stringValue = ""
-        spendLabel.attributedStringValue = NSAttributedString()
+        titleLabel.stringValue = "Cursor 额度"
+        spendLabel.stringValue = ""
         refreshFooterCopy()
         placeholderMessage = message
         styleChrome()
@@ -150,15 +152,8 @@ final class PopoverController: NSViewController {
     }
 
     private func render(report: UsageReport, at date: Date) {
-        var planParts: [String] = []
-        if let name = report.plan?.name, !name.isEmpty {
-            planParts.append(name)
-        }
-        if let price = report.plan?.price, !price.isEmpty {
-            planParts.append(price)
-        }
-        planLabel.stringValue = planParts.joined(separator: " · ")
-        spendLabel.attributedStringValue = spendLine(report: report)
+        titleLabel.stringValue = titleText(report: report)
+        spendLabel.stringValue = spendText(report: report)
         refreshFooterCopy()
         styleChrome()
 
@@ -168,27 +163,20 @@ final class PopoverController: NSViewController {
         replace(with: rows)
     }
 
-    private func spendLine(report: UsageReport) -> NSAttributedString {
-        let line = NSMutableAttributedString()
-        let quiet = Theme.secondaryText(view.effectiveAppearance)
-        let primary = NSColor.labelColor
-        let quietFont = NSFont.systemFont(ofSize: 11)
-        let primaryFont = NSFont.systemFont(ofSize: 11, weight: .medium)
-        if let spend = report.spend, spend.hasLimit {
-            line.append(NSAttributedString(
-                string: "已用 \(Theme.currency(spend.includedDollars)) / \(Theme.currency(spend.limitDollars))",
-                attributes: [.font: primaryFont, .foregroundColor: primary]
-            ))
-            line.append(NSAttributedString(
-                string: " · ",
-                attributes: [.font: quietFont, .foregroundColor: quiet]
-            ))
+    private func titleText(report: UsageReport) -> String {
+        var parts: [String] = []
+        if let name = report.plan?.name, !name.isEmpty {
+            parts.append(name)
         }
-        line.append(NSAttributedString(
-            string: Theme.footerReset(from: report.resetDate),
-            attributes: [.font: quietFont, .foregroundColor: quiet]
-        ))
-        return line
+        if let price = report.plan?.price, !price.isEmpty {
+            parts.append(price)
+        }
+        return parts.isEmpty ? "Cursor 额度" : (["Cursor"] + parts).joined(separator: " · ")
+    }
+
+    private func spendText(report: UsageReport) -> String {
+        guard let dollars = report.spend?.totalDollars else { return "" }
+        return "已用 \(Theme.currency(dollars))"
     }
 
     /// 三条额度行常驻，顺序跟着配置走：勾选决定是否进菜单栏，没勾的置灰。
@@ -201,6 +189,7 @@ final class PopoverController: NSViewController {
                 pool: report.pools.first { $0.kind == kind },
                 inMenuBar: layout.isVisible(kind),
                 canToggle: layout.canHide(kind) || !layout.isVisible(kind),
+                showsUsed: showsUsed,
                 at: date
             )
             meter.onToggle = { [weak self] in
@@ -290,52 +279,56 @@ final class PopoverController: NSViewController {
     private func configureLabels() {
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = .labelColor
+        titleLabel.alignment = .left
+        titleLabel.setContentHuggingPriority(.required, for: .horizontal)
         errorLabel.font = .systemFont(ofSize: 12)
         errorLabel.textColor = .labelColor
         errorLabel.lineBreakMode = .byWordWrapping
         errorLabel.maximumNumberOfLines = 3
         errorLabel.preferredMaxLayoutWidth = AppConfig.popoverWidth - 28
-        planLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        planLabel.textColor = .labelColor
         spendLabel.font = .systemFont(ofSize: 11)
+        spendLabel.alignment = .left
+        spendLabel.setContentHuggingPriority(.required, for: .horizontal)
         configure(percentButton, action: #selector(percentTapped))
+        configure(usageButton, action: #selector(usageTapped))
+        usageButton.imagePosition = .noImage
+        usageButton.image = nil
         configure(loginButton, action: #selector(loginTapped))
         percentButton.imagePosition = .imageTrailing
         loginButton.imagePosition = .imageTrailing
         configure(refreshButton, action: #selector(refreshTapped))
-        configure(restartButton, action: #selector(restartTapped))
         configure(quitButton, action: #selector(quitTapped))
         refreshButton.toolTip = "刷新"
-        restartButton.toolTip = "重启"
         quitButton.toolTip = "退出"
         styleChrome()
     }
 
     private func makeHeader() -> NSView {
         let spacer = flexibleSpacer()
-        let row = NSStackView(views: [titleLabel, spacer, refreshButton])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 8
-        return row
+        let spendRow = NSStackView(views: [spendLabel, spacer, refreshButton])
+        spendRow.orientation = .horizontal
+        spendRow.alignment = .centerY
+        spendRow.spacing = 8
+        spendRow.detachesHiddenViews = true
+        let column = NSStackView(views: [titleLabel, spendRow])
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 4
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            spendRow.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            spendRow.trailingAnchor.constraint(equalTo: column.trailingAnchor)
+        ])
+        return column
     }
 
     private func makeFooter() -> NSView {
-        let copy = NSStackView(views: [planLabel, spendLabel])
-        copy.orientation = .vertical
-        copy.alignment = .leading
-        copy.spacing = 2
-        copy.detachesHiddenViews = true
-        let switches = NSStackView(views: [percentButton, loginButton])
+        let switches = NSStackView(views: [usageButton, percentButton, loginButton])
         switches.orientation = .horizontal
         switches.alignment = .centerY
         switches.spacing = 2
         switches.clipsToBounds = false
-        let actions = NSStackView(views: [restartButton, quitButton])
-        actions.orientation = .horizontal
-        actions.alignment = .centerY
-        actions.spacing = 2
-        let controls = NSStackView(views: [switches, flexibleSpacer(), actions])
+        let controls = NSStackView(views: [switches, flexibleSpacer(), quitButton])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 8
@@ -343,36 +336,25 @@ final class PopoverController: NSViewController {
         // 按钮文字比套餐行往右偏一个标题内边距。把这组开关拉回来，字的左缘才对齐。
         let align = switches.leadingAnchor.constraint(
             equalTo: controls.leadingAnchor,
-            constant: -percentButton.titleLeadingInset
+            constant: -usageButton.titleLeadingInset
         )
         align.priority = .required
         align.isActive = true
-        let column = NSStackView(views: [copy, controls])
-        column.orientation = .vertical
-        column.alignment = .width
-        column.spacing = 8
-        column.detachesHiddenViews = true
-        // 菜单给底栏的左右贴边优先级只有 250/260，打不过内容自己的宽度，
-        // 底栏会缩到按钮那一截并贴在右边。这里用必需约束把它拉满。
-        NSLayoutConstraint.activate([
-            copy.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            copy.trailingAnchor.constraint(equalTo: column.trailingAnchor),
-            controls.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            controls.trailingAnchor.constraint(equalTo: column.trailingAnchor)
-        ])
-        planStack = copy
         refreshFooterCopy()
-        return column
+        return controls
     }
 
-    /// 每次重建都会把底栏移出层级，上次的贴边约束会跟着失效，所以要重新钉上。
-    private func pinFooterIfNeeded() {
-        NSLayoutConstraint.deactivate(footerPins)
-        footerPins = [
-            footer.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            footer.trailingAnchor.constraint(equalTo: stack.trailingAnchor)
-        ]
-        NSLayoutConstraint.activate(footerPins)
+    /// 菜单给这两栏的贴边优先级只有 250/260，打不过文字自己的宽度，栏会缩到内容那么窄并贴在右边。
+    /// 每次重建都会把它们移出层级，上次的约束会失效，所以要重新钉上。
+    private func pinFullWidthBars() {
+        NSLayoutConstraint.deactivate(edgePins)
+        edgePins = [header, footer].flatMap { bar in
+            [
+                bar.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+                bar.trailingAnchor.constraint(equalTo: stack.trailingAnchor)
+            ]
+        }
+        NSLayoutConstraint.activate(edgePins)
     }
 
     private func flexibleSpacer() -> NSView {
@@ -383,14 +365,14 @@ final class PopoverController: NSViewController {
     }
 
     private func refreshFooterCopy() {
-        planLabel.isHidden = planLabel.stringValue.isEmpty
-        spendLabel.isHidden = spendLabel.attributedStringValue.length == 0
-        planStack?.isHidden = planLabel.isHidden && spendLabel.isHidden
+        spendLabel.isHidden = spendLabel.stringValue.isEmpty
     }
 
     private func styleChrome() {
         let secondary = Theme.secondaryText(view.effectiveAppearance)
-        styleToggle(percentButton, title: "菜单栏 %", on: showsPercent)
+        spendLabel.textColor = secondary
+        styleToggle(percentButton, title: "菜单栏%", on: showsPercent)
+        styleUsageButton()
         styleToggle(loginButton, title: "开机自启", on: LoginItem.isEnabled)
         loginButton.toolTip = loginHint
         let clock = refreshedAt.map(Theme.refreshClock(from:)) ?? (clockAlert ? "不可用" : "--:--:--")
@@ -403,6 +385,22 @@ final class PopoverController: NSViewController {
                 .foregroundColor: clockColor
             ]
         )
+    }
+
+    private func styleUsageButton() {
+        let title = showsUsed ? "展示已用" : "展示剩余"
+        let secondary = Theme.secondaryText(view.effectiveAppearance)
+        usageButton.image = nil
+        usageButton.imagePosition = .noImage
+        usageButton.contentTintColor = secondary
+        usageButton.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: secondary
+            ]
+        )
+        usageButton.setAccessibilityLabel(title)
     }
 
     private func styleToggle(_ button: HoverButton, title: String, on: Bool) {
@@ -478,7 +476,7 @@ final class PopoverController: NSViewController {
         for view in views {
             stack.addArrangedSubview(view)
         }
-        pinFooterIfNeeded()
+        pinFullWidthBars()
         view.layoutSubtreeIfNeeded()
         let height = max(118, stack.fittingSize.height + 24)
         let size = NSSize(width: AppConfig.popoverWidth, height: height)
@@ -494,6 +492,13 @@ final class PopoverController: NSViewController {
         showsPercent.toggle()
         styleChrome()
         onShowsPercentChange?(showsPercent)
+    }
+
+    @objc private func usageTapped() {
+        showsUsed.toggle()
+        styleChrome()
+        refreshRows()
+        onShowsUsedChange?(showsUsed)
     }
 
     @objc private func loginTapped() {
@@ -516,32 +521,6 @@ final class PopoverController: NSViewController {
             loginHint = "暂时无法设置开机自启"
         }
         styleChrome()
-    }
-
-    @objc private func restartTapped() {
-        view.enclosingMenuItem?.menu?.cancelTrackingWithoutAnimation()
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(150))
-            self?.relaunch()
-        }
-    }
-
-    /// 当前进程还在时，直接打开同一个包只会把现有实例调到前面。
-    /// 先要求系统再起一份，成功后再退出这一份。
-    private func relaunch() {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.createsNewApplicationInstance = true
-        configuration.activates = false
-        NSWorkspace.shared.openApplication(
-            at: Bundle.main.bundleURL,
-            configuration: configuration
-        ) { app, error in
-            let launched = app != nil && error == nil
-            Task { @MainActor in
-                guard launched else { return }
-                NSApp.terminate(nil)
-            }
-        }
     }
 
     @objc private func quitTapped() {

@@ -9,6 +9,7 @@ enum RingGauge {
         track: NSColor,
         lineWidth: CGFloat,
         showsValue: Bool,
+        showsUsed: Bool = false,
         tickOutset: CGFloat? = nil,
         tickWidth: CGFloat? = nil,
         tickFromCenter: Bool = false
@@ -24,16 +25,20 @@ enum RingGauge {
         strokeCircle(center: center, radius: radius, width: lineWidth, color: track)
         guard showsValue else { return }
 
+        let usage = min(max(usageRemaining, 0), 1)
+        let time = min(max(timeRemaining, 0), 1)
+        // 已用：用量弧和周期指针都从 12 点沿顺时针增长。剩余沿用原来的弧和指针。
+        let arc = showsUsed ? 1 - usage : usage
+        let pointer = showsUsed ? 1 - time : time
         strokeRemaining(
             center: center,
             radius: radius,
-            fraction: visualUsageArc(usageRemaining, radius: radius),
+            fraction: visualUsageArc(arc, radius: radius),
             width: lineWidth,
             color: color
         )
 
-        let time = min(max(timeRemaining, 0), 1)
-        let radians = (90 - 360 * time) * .pi / 180
+        let radians = (90 - 360 * pointer) * .pi / 180
         let dx = Foundation.cos(radians)
         let dy = Foundation.sin(radians)
         let inner = tickFromCenter ? 0 : radius - lineWidth / 2 - tickPad

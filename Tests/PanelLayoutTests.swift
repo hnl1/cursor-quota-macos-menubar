@@ -3,7 +3,7 @@ import Foundation
 enum PanelLayoutTests {
     static func run() -> Int {
         var failures = 0
-        failures += defaultsToThirdPartyOnly()
+        failures += defaultsToAllVisible()
         failures += fillsMissingKinds()
         failures += keepsAtLeastOneVisible()
         failures += movesWithinBounds()
@@ -11,11 +11,11 @@ enum PanelLayoutTests {
         return failures
     }
 
-    private static func defaultsToThirdPartyOnly() -> Int {
+    private static func defaultsToAllVisible() -> Int {
         let layout = PanelLayout.default
         var failures = TestSupport.expect(
-            layout.visible == [.apiModels],
-            "默认应只勾选其他模型，实际 \(layout.visible)"
+            layout.visible == PoolKind.allCases,
+            "默认应勾选全部额度，实际 \(layout.visible)"
         )
         failures += TestSupport.expect(
             layout.order == PoolKind.allCases,
@@ -52,8 +52,8 @@ enum PanelLayoutTests {
         )
         failures += TestSupport.expect(
             PanelLayout(order: PoolKind.allCases, hidden: Set(PoolKind.allCases)).visible
-                == [.apiModels],
-            "全部隐藏的存档应回退为默认，只留其他模型"
+                == PoolKind.allCases,
+            "全部隐藏的存档应回退为默认，三个都勾选"
         )
         return failures
     }

@@ -26,8 +26,12 @@ enum LoginItem {
         return FileManager.default.fileExists(atPath: agentURL.path)
     }
 
-    /// 重装后签名会变，登录项可能失效。用户开过的话，启动时再登记一次。
+    /// 没选过时默认开机自启。选过之后按用户的选择恢复；重装后签名变化导致登录项失效时，再登记一次。
     static func restoreIfNeeded() {
+        guard UserDefaults.standard.object(forKey: intentKey) != nil else {
+            _ = setEnabled(true)
+            return
+        }
         guard UserDefaults.standard.bool(forKey: intentKey) else { return }
         if isEnabled { return }
         if SMAppService.mainApp.status == .requiresApproval { return }

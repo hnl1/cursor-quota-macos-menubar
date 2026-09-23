@@ -5,11 +5,12 @@ enum PoolKind: String, Sendable, Equatable, CaseIterable {
     case apiModels
     case grokBot
 
-    var title: String {
+    func title(showsUsed: Bool) -> String {
+        let mark = showsUsed ? "已用" : "剩余"
         switch self {
-        case .cursorModels: "Cursor 模型剩余"
-        case .apiModels: "其他模型剩余"
-        case .grokBot: "Grok Bot 剩余"
+        case .cursorModels: return "Cursor 模型\(mark)"
+        case .apiModels: return "其他模型\(mark)"
+        case .grokBot: return "Grok Bot \(mark)"
         }
     }
 
@@ -21,10 +22,16 @@ enum PoolKind: String, Sendable, Equatable, CaseIterable {
         }
     }
 
-    var timeTitle: String {
-        switch self {
-        case .cursorModels, .apiModels: "周期剩余"
-        case .grokBot: "本周剩余"
+    func timeTitle(showsUsed: Bool) -> String {
+        switch (self, showsUsed) {
+        case (.cursorModels, true), (.apiModels, true):
+            return "（月）周期已过"
+        case (.grokBot, true):
+            return "（周）周期已过"
+        case (.cursorModels, false), (.apiModels, false):
+            return "（月）周期剩余"
+        case (.grokBot, false):
+            return "（周）周期剩余"
         }
     }
 
@@ -52,6 +59,8 @@ struct UsageReading: Sendable, Equatable {
 
     var usageRemainingFraction: Double { usageRemaining.clamped(to: 0...1) }
     var timeRemainingFraction: Double { timeRemaining.clamped(to: 0...1) }
+    var usageUsedPercent: Int { 100 - usageRemainingPercent }
+    var timeElapsedPercent: Int { 100 - timeRemainingPercent }
 }
 
 struct UsagePool: Sendable, Equatable {
@@ -92,6 +101,23 @@ struct UsagePool: Sendable, Equatable {
         100 - displayedUsedPercent
     }
 
+    func elapsedDays(at date: Date = Date(), calendar: Calendar = .current) -> Int {
+        Self.dayDistance(from: startsAt, to: date, calendar: calendar)
+    }
+
+    func remainingDays(at date: Date = Date(), calendar: Calendar = .current) -> Int {
+        Self.dayDistance(from: date, to: resetsAt, calendar: calendar)
+    }
+
+    private static func dayDistance(from start: Date, to end: Date, calendar: Calendar) -> Int {
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: start),
+            to: calendar.startOfDay(for: end)
+        ).day ?? 0
+        return max(days, 0)
+    }
+
     func remainingTime(at date: Date = Date()) -> Double {
         let duration = resetsAt.timeIntervalSince(startsAt)
         guard duration.isFinite, duration > 0 else { return 0 }
@@ -130,11 +156,9 @@ struct SpendInfo: Sendable, Equatable {
     let limitCents: Int
     let remainingCents: Int
     let bonusCents: Int
+    let totalCents: Int?
 
-    var hasLimit: Bool { limitCents > 0 }
-
-    var includedDollars: Double { Double(includedCents) / 100 }
-    var limitDollars: Double { Double(limitCents) / 100 }
+    var totalDollars: Double? { totalCents.map { Double($0) / 100 } }
 }
 
 struct PlanInfo: Sendable, Equatable {

@@ -9,14 +9,16 @@ final class ComparisonMeter: NSView {
 
     private let titleLabel = NSTextField(labelWithString: "")
     private let usageLabel = NSTextField(labelWithString: "—")
-    private let timeTitle = NSTextField(labelWithString: "周期剩余")
+    private let timeTitle = NSTextField(labelWithString: "（月）周期已过")
     private let timeLabel = NSTextField(labelWithString: "—")
+    private let resetLabel = NSTextField(labelWithString: "")
     private let mark = NSImageView()
 
     private var usageFraction = 0.0
     private var timeFraction = 0.0
     private var fillColor = NSColor.systemGray
     private var showsValue = false
+    private var showsUsed = true
     private var ringRect = NSRect.zero
     private var hovered = false
     private var lifted = false
@@ -24,7 +26,7 @@ final class ComparisonMeter: NSView {
     private var kindTitle = ""
 
     private static let ringSize: CGFloat = 44
-    private static let rowHeight: CGFloat = 60
+    private static let rowHeight: CGFloat = 76
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -37,13 +39,21 @@ final class ComparisonMeter: NSView {
         timeTitle.font = .systemFont(ofSize: 11, weight: .regular)
         timeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         timeLabel.alignment = .right
+        resetLabel.font = .systemFont(ofSize: 11, weight: .regular)
 
         mark.imageScaling = .scaleNone
         mark.imageAlignment = .alignCenter
         mark.contentTintColor = .labelColor
         mark.setAccessibilityElement(false)
 
-        for label in [titleLabel, usageLabel, timeTitle, timeLabel] {
+        let lines = NSStackView(views: [titleLabel, timeTitle, resetLabel])
+        lines.orientation = .vertical
+        lines.alignment = .leading
+        lines.spacing = 6
+        lines.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(lines)
+
+        for label in [usageLabel, timeLabel] {
             label.translatesAutoresizingMaskIntoConstraints = false
             addSubview(label)
         }
@@ -62,16 +72,15 @@ final class ComparisonMeter: NSView {
             mark.widthAnchor.constraint(equalToConstant: 22),
             mark.heightAnchor.constraint(equalToConstant: 22),
 
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: textLeading),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            lines.leadingAnchor.constraint(equalTo: leadingAnchor, constant: textLeading),
+            lines.centerYAnchor.constraint(equalTo: centerYAnchor),
+
             usageLabel.trailingAnchor.constraint(equalTo: mark.leadingAnchor, constant: -4),
             usageLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             usageLabel.leadingAnchor.constraint(
                 greaterThanOrEqualTo: titleLabel.trailingAnchor,
                 constant: 8
             ),
-            timeTitle.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            timeTitle.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             timeLabel.trailingAnchor.constraint(equalTo: usageLabel.trailingAnchor),
             timeLabel.centerYAnchor.constraint(equalTo: timeTitle.centerYAnchor),
             timeLabel.leadingAnchor.constraint(
@@ -113,6 +122,7 @@ final class ComparisonMeter: NSView {
             track: Theme.trackFill(appearance: effectiveAppearance),
             lineWidth: 5,
             showsValue: showsValue,
+            showsUsed: showsUsed,
             tickWidth: 0.7,
             tickFromCenter: true
         )
@@ -199,11 +209,14 @@ final class ComparisonMeter: NSView {
         pool: UsagePool?,
         inMenuBar: Bool,
         canToggle: Bool,
+        showsUsed: Bool,
         at date: Date
     ) {
         self.canToggle = canToggle
-        kindTitle = kind.title
-        timeTitle.stringValue = kind.timeTitle
+        self.showsUsed = showsUsed
+        let title = kind.title(showsUsed: showsUsed)
+        kindTitle = title
+        timeTitle.stringValue = kind.timeTitle(showsUsed: showsUsed)
         mark.image = inMenuBar ? Self.checkImage : nil
         mark.setAccessibilityLabel(inMenuBar ? "在菜单栏显示\(kind.shortTitle)" : "")
 
@@ -212,19 +225,25 @@ final class ComparisonMeter: NSView {
             return
         }
         let reading = pool.reading(at: date)
+        let usagePercent = showsUsed ? reading.usageUsedPercent : reading.usageRemainingPercent
+        let timePercent = showsUsed ? reading.timeElapsedPercent : reading.timeRemainingPercent
+        let days = showsUsed ? pool.elapsedDays(at: date) : pool.remainingDays(at: date)
+        let timeText = "\(kind.timeTitle(showsUsed: showsUsed)) \(days)天"
         showsValue = true
         usageFraction = reading.usageRemainingFraction
         timeFraction = reading.timeRemainingFraction
         fillColor = Theme.paceColor(reading.pace)
-        usageLabel.stringValue = "\(reading.usageRemainingPercent)%"
+        usageLabel.stringValue = "\(usagePercent)%"
         usageLabel.textColor = fillColor
-        titleLabel.stringValue = kind.title
+        titleLabel.stringValue = title
         titleLabel.textColor = .labelColor
-        timeLabel.stringValue = "\(reading.timeRemainingPercent)%"
+        timeTitle.stringValue = timeText
+        timeLabel.stringValue = "\(timePercent)%"
+        resetLabel.stringValue = Theme.footerReset(from: pool.resetsAt)
         applyQuietColors()
-        setAccessibilityLabel(kind.title)
+        setAccessibilityLabel(title)
         setAccessibilityValue(
-            "剩余 \(reading.usageRemainingPercent)%，\(kind.timeTitle) \(reading.timeRemainingPercent)%"
+            "\(showsUsed ? "已用" : "剩余") \(usagePercent)%，\(timeText) \(timePercent)%，\(resetLabel.stringValue)"
                 + (inMenuBar ? "，在菜单栏显示" : "，未在菜单栏显示")
         )
         needsLayout = true
@@ -236,13 +255,14 @@ final class ComparisonMeter: NSView {
         usageFraction = 0
         timeFraction = 0
         fillColor = .systemGray
-        titleLabel.stringValue = kind.title
+        titleLabel.stringValue = kind.title(showsUsed: showsUsed)
         titleLabel.textColor = Theme.secondaryText(effectiveAppearance)
         usageLabel.stringValue = "—"
         usageLabel.textColor = Theme.secondaryText(effectiveAppearance)
         timeLabel.stringValue = "—"
+        resetLabel.stringValue = "—"
         applyQuietColors()
-        setAccessibilityLabel(kind.title)
+        setAccessibilityLabel(kind.title(showsUsed: showsUsed))
         setAccessibilityValue("暂无数据")
         needsDisplay = true
     }
@@ -251,6 +271,7 @@ final class ComparisonMeter: NSView {
         let color = Theme.tertiaryText(effectiveAppearance)
         timeTitle.textColor = color
         timeLabel.textColor = color
+        resetLabel.textColor = color
     }
 
     private func syncHover() {

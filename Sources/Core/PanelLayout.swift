@@ -5,8 +5,8 @@ struct PanelLayout: Sendable, Equatable {
     private(set) var order: [PoolKind]
     private(set) var hidden: Set<PoolKind>
 
-    /// 没改过勾选时，菜单栏只显示第三方模型（其他模型）。
-    static let defaultHidden: Set<PoolKind> = [.cursorModels, .grokBot]
+    /// 没改过勾选时，三个额度都出现在菜单栏。
+    static let defaultHidden: Set<PoolKind> = []
 
     static let `default` = PanelLayout()
 

@@ -20,7 +20,10 @@ enum UsageParser {
         "apipercentused", "apimodelspercentused"
     ]
     private static let includedKeys = [
-        "includedspend", "spendused", "totalspend"
+        "includedspend", "spendused"
+    ]
+    private static let totalKeys = [
+        "totalspend"
     ]
     private static let limitKeys = [
         "limit", "spendlimit"
@@ -65,6 +68,7 @@ enum UsageParser {
             let auto = planNode.firstNumber(for: autoKeys)
             let api = planNode.firstNumber(for: apiKeys)
             let included = planNode.firstNumber(for: includedKeys)
+            let total = planNode.firstNumber(for: totalKeys)
             let limit = planNode.firstNumber(for: limitKeys)
             let remaining = planNode.firstNumber(for: remainingKeys)
             let bonus = planNode.firstNumber(for: bonusKeys) ?? 0
@@ -89,6 +93,7 @@ enum UsageParser {
 
             let spend = spendInfo(
                 included: included,
+                total: total,
                 limit: limit,
                 remaining: remaining,
                 bonus: bonus
@@ -160,15 +165,17 @@ enum UsageParser {
 
     private static func spendInfo(
         included: Double?,
+        total: Double?,
         limit: Double?,
         remaining: Double?,
         bonus: Double
     ) -> SpendInfo? {
         let includedCents = included.flatMap(cents)
+        let totalCents = total.flatMap(cents)
         let limitCents = limit.flatMap(cents)
         let remainingCents = remaining.flatMap(cents)
         let bonusCents = cents(bonus) ?? 0
-        guard includedCents != nil || limitCents != nil else { return nil }
+        guard includedCents != nil || limitCents != nil || totalCents != nil else { return nil }
         let resolvedLimit = limitCents ?? 0
         let resolvedIncluded = includedCents ?? 0
         let resolvedRemaining = remainingCents ?? max(resolvedLimit - resolvedIncluded, 0)
@@ -176,7 +183,8 @@ enum UsageParser {
             includedCents: resolvedIncluded,
             limitCents: resolvedLimit,
             remainingCents: resolvedRemaining,
-            bonusCents: bonusCents
+            bonusCents: bonusCents,
+            totalCents: totalCents
         )
     }
 

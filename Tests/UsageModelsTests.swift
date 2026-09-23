@@ -18,8 +18,42 @@ enum UsageModelsTests {
             let mid = TestSupport.date(1_000_000 + 40)
             let reading = pool.reading(at: mid)
             failed += TestSupport.expect(reading.usageRemainingPercent == 80, "20% used -> 80% left")
+            failed += TestSupport.expect(reading.usageUsedPercent == 20, "20% used stays 20% used")
             failed += TestSupport.expect(reading.timeRemainingPercent == 60, "40/100 elapsed -> 60% time left")
+            failed += TestSupport.expect(reading.timeElapsedPercent == 40, "40/100 elapsed -> 40% time used")
+            failed += TestSupport.expect(pool.kind.title(showsUsed: true) == "Cursor 模型已用", "used title")
+            failed += TestSupport.expect(pool.kind.timeTitle(showsUsed: false) == "（月）周期剩余", "remaining time title")
+            failed += TestSupport.expect(pool.kind.timeTitle(showsUsed: true) == "（月）周期已过", "elapsed time title")
+            failed += TestSupport.expect(
+                PoolKind.grokBot.timeTitle(showsUsed: true) == "（周）周期已过",
+                "grok elapsed time title"
+            )
+            failed += TestSupport.expect(
+                PoolKind.grokBot.timeTitle(showsUsed: false) == "（周）周期剩余",
+                "grok remaining time title"
+            )
             failed += TestSupport.expect(reading.pace == .onPace, "80% usage left vs 60% time left is on pace")
+        }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let cycleStart = calendar.date(from: DateComponents(year: 2026, month: 9, day: 21))!
+        let cycleNow = calendar.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 15))!
+        let cycleEnd = calendar.date(from: DateComponents(year: 2026, month: 10, day: 21))!
+        if let cycle = UsagePool(
+            kind: .cursorModels,
+            usedPercent: 18,
+            startsAt: cycleStart,
+            resetsAt: cycleEnd
+        ) {
+            failed += TestSupport.expect(
+                cycle.elapsedDays(at: cycleNow, calendar: calendar) == 2,
+                "Sep 21 to Sep 23 is 2 days elapsed"
+            )
+            failed += TestSupport.expect(
+                cycle.remainingDays(at: cycleNow, calendar: calendar) == 28,
+                "Sep 23 to Oct 21 is 28 days remaining"
+            )
         }
 
         let tinyUsed = UsagePool(
