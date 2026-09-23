@@ -26,7 +26,7 @@ final class ComparisonMeter: NSView {
     private var kindTitle = ""
 
     private static let ringSize: CGFloat = 44
-    private static let rowHeight: CGFloat = 76
+    private static let rowHeight: CGFloat = 62
     private static let markSide: CGFloat = 22
 
     override init(frame frameRect: NSRect) {
@@ -50,7 +50,7 @@ final class ComparisonMeter: NSView {
         let lines = NSStackView(views: [titleLabel, timeTitle, resetLabel])
         lines.orientation = .vertical
         lines.alignment = .leading
-        lines.spacing = 6
+        lines.spacing = 3
         lines.translatesAutoresizingMaskIntoConstraints = false
         addSubview(lines)
 

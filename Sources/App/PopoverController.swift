@@ -483,8 +483,13 @@ final class PopoverController: NSViewController {
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+        var previous: NSView?
         for view in views {
             stack.addArrangedSubview(view)
+            if let previous, previous is ComparisonMeter, view is ComparisonMeter {
+                stack.setCustomSpacing(4, after: previous)
+            }
+            previous = view
         }
         pinFullWidthBars()
         view.layoutSubtreeIfNeeded()
