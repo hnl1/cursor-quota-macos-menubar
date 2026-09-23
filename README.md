@@ -1,10 +1,10 @@
-# macOS 菜单栏展示 Cursor 额度
+# 📊 macOS 菜单栏展示 Cursor 额度
 
 ![菜单栏圆环和明细面板](docs/panel.jpg)
 
 三个额度分别为 Cursor 模型、其他模型和 Grok Bot 周额度
 
-## 功能
+## ✨ 功能
 
 菜单栏展示余量圆环和百分比，三种额度可以自己选显示哪些，百分比可隐藏
 
@@ -17,7 +17,7 @@
 
 点开查看明细，点击勾选控制菜单栏展示，可拖动排序
 
-### 刷新频率
+### 🔄 刷新频率
 
 - **定时**
     - 每 5 分钟拉一次额度
@@ -32,7 +32,7 @@
         "$HOME/Applications/Cursor Quota.app/Contents/MacOS/CursorQuota" --refresh
         ```
 
-### 隐私
+### 🔒 隐私
 
 - 只读本机 `state.vscdb` 里的 `cursorAuth/accessToken` 和套餐类型
 - 令牌只留在内存，只发给 `api2.cursor.sh` 的用量接口
@@ -40,11 +40,11 @@
 - 不写用量日志，不上报遥测，没有第三方依赖
 - Cursor 的 Hooks Output 会记 hook 有没有跑，那是 Cursor 自己的日志
 
-### 安全和稳定性
+### 🛡️ 安全和稳定性
 
 非 Cursor 开放 API，接口可能会变
 
-## 安装
+## 📥 安装
 
 1. 系统版本：macOS 26 或更新
 2. 本机已安装、打开并登录过 Cursor
@@ -56,7 +56,7 @@
 
 会编译 `Cursor Quota.app` 到 `~/Applications` 并打开，同时写入用户级 Cursor hook。不需要 API key。
 
-### Cursor hook
+### 🪝 Cursor hook
 
 `./scripts/install.sh` 会写入：
 
@@ -73,7 +73,7 @@
 ./scripts/install-user-hook.sh
 ```
 
-### 卸载
+### 🗑️ 卸载
 
 1. 打开面板，关掉「开机自启」
 2. 退出应用
@@ -81,7 +81,7 @@
 4. 从 `~/.cursor/hooks.json` 去掉指向 `./hooks/nudge-cursor-quota.sh` 的 `stop` / `sessionEnd`。如果你安装过别的 hooks，这里注意不要把整个 `hooks.json` 都删了
 5. 删除 `~/.cursor/hooks/nudge-cursor-quota.sh`
 
-## 开发
+## 🛠️ 开发
 
 ```sh
 ./scripts/test.sh
