@@ -136,14 +136,12 @@ final class ComparisonMeter: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(
-            NSTrackingArea(
-                rect: bounds,
-                options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
-                owner: self,
-                userInfo: nil
-            )
-        )
+        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect]
+        // 系统默认按指针在区外登记，重建时指针若已压在上面，滑出时收不到 mouseExited，高亮会卡住。
+        if pointerInside {
+            options.insert(.assumeInside)
+        }
+        addTrackingArea(NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil))
         syncHover()
     }
 
@@ -161,7 +159,7 @@ final class ComparisonMeter: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        syncHover()
+        updateTrackingAreas()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -275,10 +273,14 @@ final class ComparisonMeter: NSView {
         resetLabel.textColor = color
     }
 
+    private var pointerInside: Bool {
+        guard let window else { return false }
+        return bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
     private func syncHover() {
-        guard let window else { return }
-        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        setHovered(bounds.contains(point))
+        guard window != nil else { return }
+        setHovered(pointerInside)
     }
 
     private func setHovered(_ value: Bool) {
