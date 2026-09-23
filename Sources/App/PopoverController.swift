@@ -294,8 +294,8 @@ final class PopoverController: NSViewController {
         usageButton.imagePosition = .noImage
         usageButton.image = nil
         configure(loginButton, action: #selector(loginTapped))
-        percentButton.imagePosition = .imageTrailing
-        loginButton.imagePosition = .imageTrailing
+        prepareIconButton(percentButton)
+        prepareIconButton(loginButton)
         configure(refreshButton, action: #selector(refreshTapped))
         configure(quitButton, action: #selector(quitTapped))
         refreshButton.toolTip = "刷新"
@@ -381,10 +381,9 @@ final class PopoverController: NSViewController {
     private func styleChrome() {
         let secondary = Theme.secondaryText(view.effectiveAppearance)
         spendLabel.textColor = secondary
-        styleToggle(percentButton, title: "菜单栏%", on: showsPercent)
+        stylePercentButton()
         styleUsageButton()
-        styleToggle(loginButton, title: "开机自启", on: LoginItem.isEnabled)
-        loginButton.toolTip = loginHint
+        styleLoginButton()
         let clock = refreshedAt.map(Theme.refreshClock(from:)) ?? (clockAlert ? "不可用" : "--:--:--")
         let clockColor = clockAlert ? NSColor.systemOrange : secondary
         refreshButton.contentTintColor = clockColor
@@ -413,37 +412,109 @@ final class PopoverController: NSViewController {
         usageButton.setAccessibilityLabel(title)
     }
 
-    private func styleToggle(_ button: HoverButton, title: String, on: Bool) {
-        let secondary = Theme.secondaryText(view.effectiveAppearance)
-        button.image = on ? Self.toggleMarkOn : Self.toggleMarkOff
-        button.contentTintColor = secondary
-        button.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: secondary
-            ]
-        )
+    private func prepareIconButton(_ button: HoverButton) {
+        button.imagePosition = .imageOnly
+        button.title = ""
+        button.symbolConfiguration = nil
     }
 
-    /// 勾选和空白必须是同一块普通图。系统符号按对齐矩形排版，空白图按整张尺寸排，
-    /// 两种状态的按钮边界会差一截，悬停底就跟着变大变小。
-    private static let toggleMarkOn = toggleMark(drawn: true)
-    private static let toggleMarkOff = toggleMark(drawn: false)
+    private func stylePercentButton() {
+        let on = showsPercent
+        let label = on ? "菜单栏显示百分比" : "菜单栏不显示百分比"
+        percentButton.image = on ? Self.percentOnImage : Self.percentOffImage
+        percentButton.contentTintColor = Theme.secondaryText(view.effectiveAppearance)
+        percentButton.toolTip = label
+        percentButton.setAccessibilityLabel(label)
+    }
 
-    private static func toggleMark(drawn: Bool) -> NSImage {
-        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        let symbol = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
-            .withSymbolConfiguration(configuration)
-        let size = symbol?.size ?? NSSize(width: 13, height: 13)
-        let image = NSImage(size: size, flipped: false) { rect in
-            if drawn {
-                symbol?.draw(in: rect)
-            }
+    private func styleLoginButton() {
+        let on = LoginItem.isEnabled
+        let label = loginHint == "登录后自动打开"
+            ? (on ? "开机自启：登录后自动打开" : "开机自启已关闭")
+            : loginHint
+        loginButton.image = on ? Self.plugOnImage : Self.plugOffImage
+        loginButton.contentTintColor = Theme.secondaryText(view.effectiveAppearance)
+        loginButton.toolTip = label
+        loginButton.setAccessibilityLabel(label)
+    }
+
+    /// 两种状态用同一张画布，按钮边界才不会跟着图标变。
+    private static let percentOnImage = iconImage { percentMark(in: $0) }
+    private static let percentOffImage = iconImage { ringMark(in: $0) }
+    private static let plugOnImage = iconImage(flipped: true) { drawPlug(in: $0, slashed: false) }
+    private static let plugOffImage = iconImage(flipped: true) { drawPlug(in: $0, slashed: true) }
+
+    private static func iconImage(flipped: Bool = false, _ draw: @escaping (NSRect) -> Void) -> NSImage {
+        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: flipped) { rect in
+            draw(rect)
             return true
         }
         image.isTemplate = true
         return image
+    }
+
+    private static func percentMark(in rect: NSRect) {
+        let text = "%" as NSString
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
+            .foregroundColor: NSColor.black
+        ]
+        let size = text.size(withAttributes: attributes)
+        text.draw(
+            at: NSPoint(
+                x: rect.midX - size.width / 2,
+                y: rect.midY - size.height / 2 - 0.4
+            ),
+            withAttributes: attributes
+        )
+    }
+
+    private static func ringMark(in rect: NSRect) {
+        let path = NSBezierPath()
+        path.appendArc(
+            withCenter: NSPoint(x: rect.midX, y: rect.midY),
+            radius: 4.87,
+            startAngle: 0,
+            endAngle: 360
+        )
+        path.lineWidth = 1.8
+        NSColor.black.setStroke()
+        path.stroke()
+    }
+
+    private static func drawPlug(in rect: NSRect, slashed: Bool) {
+        let scale = rect.width / 24
+        func box(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> NSRect {
+            NSRect(x: x * scale, y: y * scale, width: width * scale, height: height * scale)
+        }
+        NSColor.black.set()
+        NSBezierPath(roundedRect: box(7.15, 2.05, 2.45, 4.7), xRadius: 0.7 * scale, yRadius: 0.7 * scale).fill()
+        NSBezierPath(roundedRect: box(14.4, 2.05, 2.45, 4.7), xRadius: 0.7 * scale, yRadius: 0.7 * scale).fill()
+        let body = NSBezierPath(
+            roundedRect: box(5.25, 6.15, 13.5, 10.15),
+            xRadius: 2.45 * scale,
+            yRadius: 2.45 * scale
+        )
+        body.lineWidth = 1.9 * scale
+        body.stroke()
+        let cord = NSBezierPath()
+        cord.move(to: NSPoint(x: 12 * scale, y: 16.3 * scale))
+        cord.line(to: NSPoint(x: 12 * scale, y: 21.15 * scale))
+        cord.lineWidth = 1.9 * scale
+        cord.lineCapStyle = .round
+        cord.stroke()
+        guard slashed else { return }
+        let slash = NSBezierPath()
+        slash.move(to: NSPoint(x: 4.7 * scale, y: 19.3 * scale))
+        slash.line(to: NSPoint(x: 19.3 * scale, y: 4.7 * scale))
+        slash.lineCapStyle = .round
+        NSGraphicsContext.current?.compositingOperation = .destinationOut
+        slash.lineWidth = 3.6 * scale
+        slash.stroke()
+        NSGraphicsContext.current?.compositingOperation = .sourceOver
+        NSColor.black.setStroke()
+        slash.lineWidth = 1.85 * scale
+        slash.stroke()
     }
 
     private static func spinRingImage() -> NSImage {
