@@ -291,9 +291,8 @@ final class PopoverController: NSViewController {
         spendLabel.setContentHuggingPriority(.required, for: .horizontal)
         configure(percentButton, action: #selector(percentTapped))
         configure(usageButton, action: #selector(usageTapped))
-        usageButton.imagePosition = .noImage
-        usageButton.image = nil
         configure(loginButton, action: #selector(loginTapped))
+        prepareIconButton(usageButton)
         prepareIconButton(percentButton)
         prepareIconButton(loginButton)
         configure(refreshButton, action: #selector(refreshTapped))
@@ -334,10 +333,11 @@ final class PopoverController: NSViewController {
         controls.alignment = .centerY
         controls.spacing = 8
         controls.clipsToBounds = false
-        // 按钮文字比套餐行往右偏一个标题内边距。把这组开关拉回来，字的左缘才对齐。
+        // 图标比套餐行往右偏一个按钮内边距加画布留白。把这组开关拉回来，圆环轨道的左缘才和字对齐。
+        // 对齐轨道而不是箭头：剩余状态的箭头伸到轨道外，按它对齐会在切换时左右跳。
         let align = switches.leadingAnchor.constraint(
             equalTo: controls.leadingAnchor,
-            constant: -usageButton.titleLeadingInset
+            constant: -(usageButton.imageLeadingInset + Self.usageRingLeadingInset)
         )
         align.priority = .required
         align.isActive = true
@@ -397,19 +397,11 @@ final class PopoverController: NSViewController {
     }
 
     private func styleUsageButton() {
-        let title = showsUsed ? "展示已用" : "展示剩余"
-        let secondary = Theme.secondaryText(view.effectiveAppearance)
-        usageButton.image = nil
-        usageButton.imagePosition = .noImage
-        usageButton.contentTintColor = secondary
-        usageButton.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: secondary
-            ]
-        )
-        usageButton.setAccessibilityLabel(title)
+        let label = showsUsed ? "展示已用" : "展示剩余"
+        usageButton.image = showsUsed ? Self.usedImage : Self.remainingImage
+        usageButton.contentTintColor = Theme.secondaryText(view.effectiveAppearance)
+        usageButton.toolTip = label
+        usageButton.setAccessibilityLabel(label)
     }
 
     private func prepareIconButton(_ button: HoverButton) {
@@ -443,6 +435,12 @@ final class PopoverController: NSViewController {
     private static let percentOffImage = iconImage { ringMark(in: $0) }
     private static let plugOnImage = iconImage(flipped: true) { drawPlug(in: $0, slashed: false) }
     private static let plugOffImage = iconImage(flipped: true) { drawPlug(in: $0, slashed: true) }
+    private static let usedImage = iconImage { usageRing(in: $0, showsUsed: true) }
+    private static let remainingImage = iconImage { usageRing(in: $0, showsUsed: false) }
+
+    private static let usageRingRadius: CGFloat = 5.1
+    private static let usageRingWidth: CGFloat = 2.2
+    private static let usageRingLeadingInset = 8 - usageRingRadius - usageRingWidth / 2
 
     private static func iconImage(flipped: Bool = false, _ draw: @escaping (NSRect) -> Void) -> NSImage {
         let image = NSImage(size: NSSize(width: 16, height: 16), flipped: flipped) { rect in
@@ -480,6 +478,68 @@ final class PopoverController: NSViewController {
         path.lineWidth = 1.8
         NSColor.black.setStroke()
         path.stroke()
+    }
+
+    /// 和面板圆环同一种读法：深色弧从 12 点顺时针画到交界。
+    /// 已用：深色箭头在交界处朝顺时针，深色在长；剩余：灰色箭头朝逆时针，灰色在长、深色在缩。
+    private static func usageRing(in rect: NSRect, showsUsed: Bool) {
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let boundary: CGFloat = showsUsed ? 0.25 : 0.75
+        let trackAlpha: CGFloat = 0.26
+        func arc(from start: CGFloat, to end: CGFloat) {
+            let path = NSBezierPath()
+            path.appendArc(
+                withCenter: center,
+                radius: usageRingRadius,
+                startAngle: 90 - 360 * start,
+                endAngle: 90 - 360 * end,
+                clockwise: true
+            )
+            path.lineWidth = usageRingWidth
+            path.stroke()
+        }
+        let head = usageArrowHead(center: center, at: boundary, clockwise: showsUsed)
+        NSColor.black.set()
+        if showsUsed {
+            NSColor.black.withAlphaComponent(trackAlpha).setStroke()
+            arc(from: 0, to: 1)
+            NSColor.black.set()
+            arc(from: 0, to: boundary)
+            head.fill()
+            head.stroke()
+            return
+        }
+        arc(from: 0, to: boundary)
+        NSGraphicsContext.current?.compositingOperation = .destinationOut
+        head.fill()
+        NSGraphicsContext.current?.compositingOperation = .sourceOver
+        // 轨道和箭头在同一透明层里画成实色再整体变淡，重叠处不会加深。
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.setAlpha(trackAlpha)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        arc(from: boundary, to: 1)
+        head.fill()
+        context.endTransparencyLayer()
+        context.setAlpha(1)
+    }
+
+    /// 底边中点落在圆环上 fraction 处，尖端沿切线伸出。
+    private static func usageArrowHead(center: NSPoint, at fraction: CGFloat, clockwise: Bool) -> NSBezierPath {
+        let length: CGFloat = 3.0
+        let halfWidth: CGFloat = 2.6
+        let angle = (90 - 360 * fraction) * .pi / 180
+        let normal = NSPoint(x: cos(angle), y: sin(angle))
+        let direction: CGFloat = clockwise ? 1 : -1
+        let tangent = NSPoint(x: sin(angle) * direction, y: -cos(angle) * direction)
+        let base = NSPoint(x: center.x + usageRingRadius * normal.x, y: center.y + usageRingRadius * normal.y)
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: base.x + tangent.x * length, y: base.y + tangent.y * length))
+        path.line(to: NSPoint(x: base.x + normal.x * halfWidth, y: base.y + normal.y * halfWidth))
+        path.line(to: NSPoint(x: base.x - normal.x * halfWidth, y: base.y - normal.y * halfWidth))
+        path.close()
+        path.lineWidth = 0.5
+        path.lineJoinStyle = .round
+        return path
     }
 
     private static func drawPlug(in rect: NSRect, slashed: Bool) {
@@ -670,12 +730,12 @@ private final class HoverButton: NSButton {
         setAccessibilityLabel(title)
     }
 
-    /// 标题左缘相对按钮边界的距离。用来和上面的文字左对齐。
-    var titleLeadingInset: CGFloat {
+    /// 图标画布左缘相对按钮边界的距离。用来和上面的文字左对齐。
+    var imageLeadingInset: CGFloat {
         guard let cell = cell as? NSButtonCell else { return 0 }
         let size = intrinsicContentSize
         guard size.width > 1, size.height > 1 else { return 0 }
-        return cell.titleRect(forBounds: NSRect(origin: .zero, size: size)).minX
+        return cell.imageRect(forBounds: NSRect(origin: .zero, size: size)).minX
     }
 
     /// 字或图标右缘，相对对齐矩形右缘的内缩。布局钉的是对齐矩形，不是按钮外框。
