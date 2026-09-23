@@ -319,6 +319,7 @@ final class PopoverController: NSViewController {
             spendRow.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             spendRow.trailingAnchor.constraint(equalTo: column.trailingAnchor)
         ])
+        alignTrailingContent(of: refreshButton, in: spendRow)
         return column
     }
 
@@ -340,8 +341,17 @@ final class PopoverController: NSViewController {
         )
         align.priority = .required
         align.isActive = true
+        alignTrailingContent(of: quitButton, in: controls)
         refreshFooterCopy()
         return controls
+    }
+
+    /// 时间和退出图标比额度行的对勾更靠里，差的是按钮自己的内边距。
+    /// 右内边距取负，按钮画出这一行，内容右缘才和勾对齐。
+    private func alignTrailingContent(of button: HoverButton, in row: NSStackView) {
+        row.clipsToBounds = false
+        let overflow = button.contentTrailingInset - ComparisonMeter.markTrailingInset
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: -overflow)
     }
 
     /// 菜单给这两栏的贴边优先级只有 250/260，打不过文字自己的宽度，栏会缩到内容那么窄并贴在右边。
@@ -590,6 +600,18 @@ private final class HoverButton: NSButton {
         let size = intrinsicContentSize
         guard size.width > 1, size.height > 1 else { return 0 }
         return cell.titleRect(forBounds: NSRect(origin: .zero, size: size)).minX
+    }
+
+    /// 字或图标右缘，相对对齐矩形右缘的内缩。布局钉的是对齐矩形，不是按钮外框。
+    var contentTrailingInset: CGFloat {
+        guard let cell = cell as? NSButtonCell else { return 0 }
+        let size = intrinsicContentSize
+        guard size.width > 1, size.height > 1 else { return 0 }
+        let bounds = NSRect(origin: .zero, size: size)
+        let content = imagePosition == .imageOnly || title.isEmpty
+            ? cell.imageRect(forBounds: bounds)
+            : cell.titleRect(forBounds: bounds)
+        return size.width - alignmentRectInsets.right - content.maxX
     }
 
     func setSpinImage(_ image: NSImage?) {

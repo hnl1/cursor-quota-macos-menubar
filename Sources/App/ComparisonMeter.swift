@@ -27,6 +27,7 @@ final class ComparisonMeter: NSView {
 
     private static let ringSize: CGFloat = 44
     private static let rowHeight: CGFloat = 76
+    private static let markSide: CGFloat = 22
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -69,8 +70,8 @@ final class ComparisonMeter: NSView {
 
             mark.trailingAnchor.constraint(equalTo: trailingAnchor),
             mark.centerYAnchor.constraint(equalTo: centerYAnchor),
-            mark.widthAnchor.constraint(equalToConstant: 22),
-            mark.heightAnchor.constraint(equalToConstant: 22),
+            mark.widthAnchor.constraint(equalToConstant: Self.markSide),
+            mark.heightAnchor.constraint(equalToConstant: Self.markSide),
 
             lines.leadingAnchor.constraint(equalTo: leadingAnchor, constant: textLeading),
             lines.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -284,6 +285,12 @@ final class ComparisonMeter: NSView {
         guard hovered != value else { return }
         hovered = value
         needsDisplay = true
+    }
+
+    /// 对勾在盒子里居中，图像视图又按符号的对齐矩形缩进，所以勾的右缘离行尾是留白的一半。
+    static var markTrailingInset: CGFloat {
+        guard let image = checkImage else { return 0 }
+        return (markSide - image.alignmentRect.width) / 2
     }
 
     private static let checkImage: NSImage? = {
