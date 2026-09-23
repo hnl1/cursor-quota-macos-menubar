@@ -2,6 +2,8 @@
 
 第三方 macOS 菜单栏小工具。读取本机已登录的 Cursor 账号，显示当前账期还剩多少额度。栏里看进度，点击看 Cursor 模型、其他模型和 Grok Bot 周额度。
 
+![菜单栏圆环和明细面板](docs/panel.jpg)
+
 不是 Cursor 官方产品，和 Cursor / Anysphere 没有关联。
 
 ## 功能
