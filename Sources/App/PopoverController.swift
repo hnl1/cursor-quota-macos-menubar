@@ -407,11 +407,7 @@ final class PopoverController: NSViewController {
 
     private func styleToggle(_ button: HoverButton, title: String, on: Bool) {
         let secondary = Theme.secondaryText(view.effectiveAppearance)
-        let mark = on
-            ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: title)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
-            : nil
-        button.image = mark ?? Self.emptyToggleMark
+        button.image = on ? Self.toggleMarkOn : Self.toggleMarkOff
         button.contentTintColor = secondary
         button.attributedTitle = NSAttributedString(
             string: title,
@@ -422,11 +418,25 @@ final class PopoverController: NSViewController {
         )
     }
 
-    private static let emptyToggleMark: NSImage = {
-        let image = NSImage(size: NSSize(width: 13, height: 13))
+    /// 勾选和空白必须是同一块普通图。系统符号按对齐矩形排版，空白图按整张尺寸排，
+    /// 两种状态的按钮边界会差一截，悬停底就跟着变大变小。
+    private static let toggleMarkOn = toggleMark(drawn: true)
+    private static let toggleMarkOff = toggleMark(drawn: false)
+
+    private static func toggleMark(drawn: Bool) -> NSImage {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        let symbol = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        let size = symbol?.size ?? NSSize(width: 13, height: 13)
+        let image = NSImage(size: size, flipped: false) { rect in
+            if drawn {
+                symbol?.draw(in: rect)
+            }
+            return true
+        }
         image.isTemplate = true
         return image
-    }()
+    }
 
     private static func spinRingImage() -> NSImage {
         let side: CGFloat = 13
