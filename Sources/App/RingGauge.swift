@@ -15,8 +15,9 @@ enum RingGauge {
         tickFromCenter: Bool = false
     ) {
         guard rect.width > 1, rect.height > 1 else { return }
-        let tickPad = tickOutset ?? max(1.8, lineWidth * 0.55)
-        let inset = lineWidth / 2 + tickPad + 0.4
+        let pad = gaugePad(lineWidth: lineWidth, tickOutset: tickOutset)
+        let tickPad = pad.tickPad
+        let inset = pad.inset
         let bounds = rect.insetBy(dx: inset, dy: inset)
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
         let radius = min(bounds.width, bounds.height) / 2
@@ -77,6 +78,20 @@ enum RingGauge {
         arc.lineCapStyle = .butt
         color.setStroke()
         arc.stroke()
+    }
+
+    /// 圆周描边最外点到画布左缘的距离。
+    static func strokeOuterInset(lineWidth: CGFloat, tickOutset: CGFloat? = nil) -> CGFloat {
+        let pad = gaugePad(lineWidth: lineWidth, tickOutset: tickOutset)
+        return pad.inset - lineWidth / 2
+    }
+
+    private static func gaugePad(
+        lineWidth: CGFloat,
+        tickOutset: CGFloat?
+    ) -> (tickPad: CGFloat, inset: CGFloat) {
+        let tickPad = tickOutset ?? max(1.8, lineWidth * 0.55)
+        return (tickPad, lineWidth / 2 + tickPad + 0.4)
     }
 
     private static func visualUsageArc(

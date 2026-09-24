@@ -26,8 +26,29 @@ final class ComparisonMeter: NSView {
     private var kindTitle = ""
 
     private static let ringSize: CGFloat = 44
+    private static let ringLineWidth: CGFloat = 5
     private static let rowHeight: CGFloat = 62
     private static let markSide: CGFloat = 22
+    private static let checkCanvas: CGFloat = 16
+    private static let checkLineWidth: CGFloat = 1.9
+    private static let checkTipX: CGFloat = 12.8
+
+    /// 描边外缘落在内容线上时，画布左缘相对行左缘的位置。
+    private static var ringLeading: CGFloat {
+        PanelMetrics.contentInset - RingGauge.strokeOuterInset(lineWidth: ringLineWidth)
+    }
+
+    /// 对勾笔画右缘落在内容线上时，盒子右缘相对行右缘的内缩。
+    private static var markTrailing: CGFloat {
+        PanelMetrics.contentInset - checkInkTrailingInset
+    }
+
+    /// 笔画右缘到 22pt 盒子右缘的距离。图画布在盒子里居中。
+    private static var checkInkTrailingInset: CGFloat {
+        let canvasInset = (markSide - checkCanvas) / 2
+        let inkFromCanvasRight = checkCanvas - (checkTipX + checkLineWidth / 2)
+        return canvasInset + inkFromCanvasRight
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -64,11 +85,11 @@ final class ComparisonMeter: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
 
-        let textLeading = Self.ringSize + 10
+        let textLeading = Self.ringLeading + Self.ringSize + 10
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: Self.rowHeight),
 
-            mark.trailingAnchor.constraint(equalTo: trailingAnchor),
+            mark.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.markTrailing),
             mark.centerYAnchor.constraint(equalTo: centerYAnchor),
             mark.widthAnchor.constraint(equalToConstant: Self.markSide),
             mark.heightAnchor.constraint(equalToConstant: Self.markSide),
@@ -103,7 +124,7 @@ final class ComparisonMeter: NSView {
     override func layout() {
         super.layout()
         let y = bounds.midY - Self.ringSize / 2
-        ringRect = NSRect(x: bounds.minX, y: y, width: Self.ringSize, height: Self.ringSize)
+        ringRect = NSRect(x: bounds.minX + Self.ringLeading, y: y, width: Self.ringSize, height: Self.ringSize)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -121,7 +142,7 @@ final class ComparisonMeter: NSView {
             timeRemaining: timeFraction,
             color: fillColor,
             track: Theme.trackFill(appearance: effectiveAppearance),
-            lineWidth: 5,
+            lineWidth: Self.ringLineWidth,
             showsValue: showsValue,
             showsUsed: showsUsed,
             tickWidth: 0.7,
@@ -289,20 +310,14 @@ final class ComparisonMeter: NSView {
         needsDisplay = true
     }
 
-    /// 对勾图画布小于 mark 盒子且居中，右缘离行尾是两侧留白的一半。
-    static var markTrailingInset: CGFloat {
-        guard let image = checkImage else { return 0 }
-        return (markSide - image.size.width) / 2
-    }
-
     private static let checkImage: NSImage? = {
-        let size = NSSize(width: 16, height: 16)
+        let size = NSSize(width: checkCanvas, height: checkCanvas)
         let image = NSImage(size: size, flipped: false) { _ in
             let path = NSBezierPath()
             path.move(to: NSPoint(x: 3.2, y: 8.3))
             path.line(to: NSPoint(x: 6.7, y: 4.7))
-            path.line(to: NSPoint(x: 12.8, y: 11.5))
-            path.lineWidth = 1.9
+            path.line(to: NSPoint(x: checkTipX, y: 11.5))
+            path.lineWidth = checkLineWidth
             path.lineCapStyle = .round
             path.lineJoinStyle = .round
             NSColor.black.setStroke()

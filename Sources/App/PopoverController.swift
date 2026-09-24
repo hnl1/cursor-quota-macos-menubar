@@ -1,6 +1,11 @@
 import AppKit
 import ServiceManagement
 
+enum PanelMetrics {
+    /// 灰底列到可见内容的左右距离。
+    static let contentInset: CGFloat = 6
+}
+
 @MainActor
 final class PopoverController: NSViewController {
     var onRefresh: (() -> Void)?
@@ -308,7 +313,13 @@ final class PopoverController: NSViewController {
         row.alignment = .firstBaseline
         row.spacing = 8
         row.detachesHiddenViews = true
-        row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: ComparisonMeter.markTrailingInset)
+        // 栈按对齐矩形排文字，字形画在框的外缘。把对齐矩形再让出这段，字形才落在内容线上。
+        row.edgeInsets = NSEdgeInsets(
+            top: 0,
+            left: PanelMetrics.contentInset + titleLabel.alignmentRectInsets.left,
+            bottom: 0,
+            right: PanelMetrics.contentInset + spendLabel.alignmentRectInsets.right
+        )
         return row
     }
 
@@ -317,30 +328,12 @@ final class PopoverController: NSViewController {
         switches.orientation = .horizontal
         switches.alignment = .centerY
         switches.spacing = 2
-        switches.clipsToBounds = false
         let controls = NSStackView(views: [refreshButton, flexibleSpacer(), switches])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 8
-        controls.clipsToBounds = false
-        // 图标比套餐行往右偏一个按钮内边距。把刷新按钮拉回来，图标左缘才和字对齐。
-        let align = refreshButton.leadingAnchor.constraint(
-            equalTo: controls.leadingAnchor,
-            constant: -refreshButton.imageLeadingInset
-        )
-        align.priority = .required
-        align.isActive = true
-        alignTrailingContent(of: quitButton, in: controls)
         refreshFooterCopy()
         return controls
-    }
-
-    /// 退出图标比额度行的对勾更靠里，差的是按钮自己的内边距。
-    /// 右内边距取负，按钮画出这一行，内容右缘才和勾对齐。
-    private func alignTrailingContent(of button: HoverButton, in row: NSStackView) {
-        row.clipsToBounds = false
-        let overflow = button.contentTrailingInset - ComparisonMeter.markTrailingInset
-        row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: -overflow)
     }
 
     /// 菜单给这两栏的贴边优先级只有 250/260，打不过文字自己的宽度，栏会缩到内容那么窄并贴在右边。
@@ -737,6 +730,60 @@ final class PopoverController: NSViewController {
     }
 }
 
+/// 左右内距由这里定，不用系统按钮把多余宽度摊到一侧。
+private final class HoverButtonCell: NSButtonCell {
+    /// 系统 `imageHugsTitle` 量出来的图标和文字间距。
+    private static let imageTitleGap: CGFloat = 2
+    private static let verticalExtra: CGFloat = 6
+
+    override func imageRect(forBounds rect: NSRect) -> NSRect {
+        guard let image, image.size.width > 0, image.size.height > 0 else { return .zero }
+        let size = image.size
+        return NSRect(
+            x: rect.minX + PanelMetrics.contentInset,
+            y: rect.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    override func titleRect(forBounds rect: NSRect) -> NSRect {
+        let titleSize = Self.titleSize(of: self)
+        guard titleSize.width > 0, titleSize.height > 0 else { return .zero }
+        let imageFrame = imageRect(forBounds: rect)
+        let x = imageFrame.width > 0
+            ? imageFrame.maxX + Self.imageTitleGap
+            : rect.minX + PanelMetrics.contentInset
+        return NSRect(
+            x: x,
+            y: rect.midY - titleSize.height / 2,
+            width: titleSize.width,
+            height: titleSize.height
+        )
+    }
+
+    func fittingSize() -> NSSize {
+        let imageSize = image?.size ?? .zero
+        let titleSize = Self.titleSize(of: self)
+        let gap = imageSize.width > 0 && titleSize.width > 0 ? Self.imageTitleGap : 0
+        let contentWidth = imageSize.width + gap + titleSize.width
+        let contentHeight = max(imageSize.height, titleSize.height)
+        return NSSize(
+            width: contentWidth + PanelMetrics.contentInset * 2,
+            height: contentHeight + Self.verticalExtra
+        )
+    }
+
+    private static func titleSize(of cell: NSButtonCell) -> NSSize {
+        if cell.attributedTitle.length > 0 {
+            return cell.attributedTitle.size()
+        }
+        guard !cell.title.isEmpty else { return .zero }
+        let font = cell.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        return cell.title.size(withAttributes: [.font: font])
+    }
+}
+
 @MainActor
 private final class HoverButton: NSButton {
     private var hovered = false
@@ -752,6 +799,7 @@ private final class HoverButton: NSButton {
         imageOnly: Bool = false
     ) {
         self.init(frame: .zero)
+        cell = HoverButtonCell(textCell: "")
         self.title = imageOnly ? "" : title
         self.image = image
         baseImage = image
@@ -768,35 +816,12 @@ private final class HoverButton: NSButton {
         setAccessibilityLabel(title)
     }
 
-    /// 图标画布左缘相对按钮边界的距离。用来和上面的文字左对齐。
-    var imageLeadingInset: CGFloat {
-        guard let cell = cell as? NSButtonCell else { return 0 }
-        let size = intrinsicContentSize
-        guard size.width > 1, size.height > 1 else { return 0 }
-        return cell.imageRect(forBounds: NSRect(origin: .zero, size: size)).minX
-    }
-
-    /// 字或图标右缘，相对对齐矩形右缘的内缩。布局钉的是对齐矩形，不是按钮外框。
-    var contentTrailingInset: CGFloat {
-        guard let cell = cell as? NSButtonCell else { return 0 }
-        let size = intrinsicContentSize
-        guard size.width > 1, size.height > 1 else { return 0 }
-        let bounds = NSRect(origin: .zero, size: size)
-        let content = imagePosition == .imageOnly || title.isEmpty
-            ? cell.imageRect(forBounds: bounds)
-            : cell.titleRect(forBounds: bounds)
-        return size.width - alignmentRectInsets.right - content.maxX
-    }
-
     func setSpinImage(_ image: NSImage?) {
         spinImage = image
     }
 
     override var intrinsicContentSize: NSSize {
-        var size = super.intrinsicContentSize
-        size.width += 12
-        size.height += 6
-        return size
+        (cell as? HoverButtonCell)?.fittingSize() ?? super.intrinsicContentSize
     }
 
     /// 拉取期间让图标转起来。菜单跟踪时也要动，所以用 common 模式的定时器而不是动画。
