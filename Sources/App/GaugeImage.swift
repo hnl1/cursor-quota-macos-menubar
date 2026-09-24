@@ -35,8 +35,13 @@ enum GaugeImage {
         .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     }
 
-    static func image(for scene: MenuBarScene, showsPercent: Bool = false, showsUsed: Bool = true) -> NSImage {
-        let entries = entries(for: scene, showsPercent: showsPercent, showsUsed: showsUsed)
+    static func image(
+        for scene: MenuBarScene,
+        showsPercent: Bool = false,
+        showsUsed: Bool = true,
+        showsColor: Bool = true
+    ) -> NSImage {
+        let entries = entries(for: scene, showsPercent: showsPercent, showsUsed: showsUsed, showsColor: showsColor)
         let widths = entries.map { textWidth($0.text) }
         let stale = if case .readings(_, let isStale) = scene { isStale } else { false }
 
@@ -58,7 +63,12 @@ enum GaugeImage {
         return image
     }
 
-    private static func entries(for scene: MenuBarScene, showsPercent: Bool, showsUsed: Bool) -> [Entry] {
+    private static func entries(
+        for scene: MenuBarScene,
+        showsPercent: Bool,
+        showsUsed: Bool,
+        showsColor: Bool
+    ) -> [Entry] {
         switch scene {
         case .loading:
             [placeholder("…")]
@@ -75,7 +85,7 @@ enum GaugeImage {
                             : "",
                         usageRemaining: reading.usageRemainingFraction,
                         timeRemaining: reading.timeRemainingFraction,
-                        color: Theme.paceColor(reading.pace),
+                        color: Theme.paceColor(reading.pace, colored: showsColor),
                         showsValue: true
                     )
                 }

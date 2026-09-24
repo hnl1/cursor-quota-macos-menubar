@@ -230,6 +230,7 @@ final class ComparisonMeter: NSView {
         inMenuBar: Bool,
         canToggle: Bool,
         showsUsed: Bool,
+        showsColor: Bool,
         at date: Date
     ) {
         self.canToggle = canToggle
@@ -252,7 +253,7 @@ final class ComparisonMeter: NSView {
         showsValue = true
         usageFraction = reading.usageRemainingFraction
         timeFraction = reading.timeRemainingFraction
-        fillColor = Theme.paceColor(reading.pace)
+        fillColor = Theme.paceColor(reading.pace, colored: showsColor)
         usageLabel.stringValue = "\(usagePercent)%"
         usageLabel.textColor = fillColor
         titleLabel.stringValue = title

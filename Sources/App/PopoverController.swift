@@ -13,6 +13,7 @@ final class PopoverController: NSViewController {
     var onLayoutChange: ((PanelLayout) -> Void)?
     var onShowsPercentChange: ((Bool) -> Void)?
     var onShowsUsedChange: ((Bool) -> Void)?
+    var onShowsColorChange: ((Bool) -> Void)?
 
     private let stack = NSStackView()
     private let titleLabel = NSTextField(labelWithString: "Cursor 额度")
@@ -20,6 +21,7 @@ final class PopoverController: NSViewController {
     private let spendLabel = NSTextField(labelWithString: "")
     private let percentButton = HoverButton(title: "菜单栏%")
     private let usageButton = HoverButton(title: "展示已用")
+    private let colorButton = HoverButton(title: "显示颜色")
     private let loginButton = HoverButton(title: "开机自启")
     private let refreshButton = HoverButton(title: "--:--:--", image: PopoverController.refreshImage)
     private let quitButton = HoverButton(title: "退出", image: PopoverController.powerImage, imageOnly: true)
@@ -33,6 +35,7 @@ final class PopoverController: NSViewController {
     private var layout = PanelLayout.default
     private var showsPercent = false
     private var showsUsed = true
+    private var showsColor = true
     private var loginHint = "登录后自动打开"
     private var refreshedAt: Date?
     private var clockAlert = false
@@ -93,6 +96,13 @@ final class PopoverController: NSViewController {
     func apply(showsUsed: Bool) {
         _ = view
         self.showsUsed = showsUsed
+        styleChrome()
+        refreshRows()
+    }
+
+    func apply(showsColor: Bool) {
+        _ = view
+        self.showsColor = showsColor
         styleChrome()
         refreshRows()
     }
@@ -195,6 +205,7 @@ final class PopoverController: NSViewController {
                 inMenuBar: layout.isVisible(kind),
                 canToggle: layout.canHide(kind) || !layout.isVisible(kind),
                 showsUsed: showsUsed,
+                showsColor: showsColor,
                 at: date
             )
             meter.onToggle = { [weak self] in
@@ -296,9 +307,11 @@ final class PopoverController: NSViewController {
         spendLabel.setContentHuggingPriority(.required, for: .horizontal)
         configure(percentButton, action: #selector(percentTapped))
         configure(usageButton, action: #selector(usageTapped))
+        configure(colorButton, action: #selector(colorTapped))
         configure(loginButton, action: #selector(loginTapped))
         prepareIconButton(usageButton)
         prepareIconButton(percentButton)
+        prepareIconButton(colorButton)
         prepareIconButton(loginButton)
         configure(refreshButton, action: #selector(refreshTapped))
         configure(quitButton, action: #selector(quitTapped))
@@ -324,7 +337,7 @@ final class PopoverController: NSViewController {
     }
 
     private func makeFooter() -> NSView {
-        let switches = NSStackView(views: [usageButton, percentButton, loginButton, quitButton])
+        let switches = NSStackView(views: [usageButton, percentButton, colorButton, loginButton, quitButton])
         switches.orientation = .horizontal
         switches.alignment = .centerY
         switches.spacing = 2
@@ -365,6 +378,7 @@ final class PopoverController: NSViewController {
         spendLabel.textColor = secondary
         stylePercentButton()
         styleUsageButton()
+        styleColorButton()
         styleLoginButton()
         let clock = refreshedAt.map(Theme.refreshClock(from:)) ?? (clockAlert ? "不可用" : "--:--:--")
         let clockColor = clockAlert ? NSColor.systemOrange : secondary
@@ -400,6 +414,14 @@ final class PopoverController: NSViewController {
         percentButton.setAccessibilityLabel(label)
     }
 
+    private func styleColorButton() {
+        let label = showsColor ? "显示颜色" : "不显示颜色"
+        colorButton.image = showsColor ? Self.colorOnImage : Self.colorOffImage
+        colorButton.contentTintColor = Theme.secondaryText(view.effectiveAppearance)
+        colorButton.toolTip = label
+        colorButton.setAccessibilityLabel(label)
+    }
+
     private func styleLoginButton() {
         let on = LoginItem.isEnabled
         let label = loginHint == "登录后自动打开"
@@ -414,6 +436,8 @@ final class PopoverController: NSViewController {
     /// 两种状态用同一张画布，按钮边界才不会跟着图标变。
     private static let percentOnImage = iconImage { percentMark(in: $0) }
     private static let percentOffImage = iconImage { ringMark(in: $0) }
+    private static let colorOnImage = iconImage { drawDroplet(in: $0, slashed: false) }
+    private static let colorOffImage = iconImage { drawDroplet(in: $0, slashed: true) }
     private static let plugOnImage = iconImage(flipped: true) { drawPlug(in: $0, slashed: false) }
     private static let plugOffImage = iconImage(flipped: true) { drawPlug(in: $0, slashed: true) }
     private static let usedImage = iconImage { usageRing(in: $0, showsUsed: true) }
@@ -567,6 +591,44 @@ final class PopoverController: NSViewController {
         slash.stroke()
     }
 
+    /// 实心那只把描边宽度并进半径，和空心那只外轮廓一样大。
+    private static func drawDroplet(in rect: NSRect, slashed: Bool) {
+        func droplet(radius: CGFloat, apexY: CGFloat) -> NSBezierPath {
+            let center = NSPoint(x: rect.midX, y: rect.minY + 6.6)
+            let tangent = acos(radius / (apexY - center.y)) * 180 / .pi
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: rect.midX, y: apexY))
+            path.appendArc(
+                withCenter: center,
+                radius: radius,
+                startAngle: 90 - tangent,
+                endAngle: 90 + tangent,
+                clockwise: true
+            )
+            path.close()
+            path.lineJoinStyle = .round
+            return path
+        }
+        NSColor.black.set()
+        guard slashed else {
+            droplet(radius: 4.85, apexY: rect.minY + 14.5).fill()
+            return
+        }
+        let outline = droplet(radius: 4.0, apexY: rect.minY + 13.6)
+        outline.lineWidth = 1.7
+        outline.stroke()
+        let slash = NSBezierPath()
+        slash.move(to: NSPoint(x: rect.minX + 3.2, y: rect.minY + 12.8))
+        slash.line(to: NSPoint(x: rect.minX + 12.8, y: rect.minY + 3.2))
+        slash.lineCapStyle = .round
+        NSGraphicsContext.current?.compositingOperation = .destinationOut
+        slash.lineWidth = 3.4
+        slash.stroke()
+        NSGraphicsContext.current?.compositingOperation = .sourceOver
+        slash.lineWidth = 1.7
+        slash.stroke()
+    }
+
     private static func drawRefresh(in rect: NSRect) {
         let center = NSPoint(x: rect.midX, y: rect.midY)
         let radius: CGFloat = 4.85
@@ -688,6 +750,13 @@ final class PopoverController: NSViewController {
         styleChrome()
         refreshRows()
         onShowsUsedChange?(showsUsed)
+    }
+
+    @objc private func colorTapped() {
+        showsColor.toggle()
+        styleChrome()
+        refreshRows()
+        onShowsColorChange?(showsColor)
     }
 
     @objc private func loginTapped() {

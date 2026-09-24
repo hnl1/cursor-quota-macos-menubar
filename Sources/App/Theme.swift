@@ -1,8 +1,9 @@
 import AppKit
 
 enum Theme {
-    static func paceColor(_ pace: UsagePace) -> NSColor {
-        switch pace {
+    static func paceColor(_ pace: UsagePace, colored: Bool) -> NSColor {
+        guard colored else { return .labelColor }
+        return switch pace {
         case .onPace: .systemGreen
         case .behind: .systemOrange
         case .critical: .systemRed

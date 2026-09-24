@@ -7,6 +7,8 @@ enum MenuBarOptionsTests {
         failures += roundTripsHiddenPercent()
         failures += defaultsToShowingUsed()
         failures += roundTripsRemaining()
+        failures += defaultsToShowingColor()
+        failures += roundTripsHiddenColor()
         return failures
     }
 
@@ -72,6 +74,38 @@ enum MenuBarOptionsTests {
         let failures = TestSupport.expect(
             MenuBarOptions.load(from: defaults) == remaining,
             "切到展示剩余后应能读回，实际 \(MenuBarOptions.load(from: defaults))"
+        )
+        defaults.removePersistentDomain(forName: suite)
+        return failures
+    }
+
+    private static func defaultsToShowingColor() -> Int {
+        let suite = "com.hnl1.cursorquota.tests.menubar.color"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return TestSupport.expect(false, "无法创建测试用 UserDefaults")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(true, forKey: "menubar.showsPercent")
+        defaults.set(false, forKey: "menubar.showsUsed")
+        let failures = TestSupport.expect(
+            MenuBarOptions.load(from: defaults).showsColor,
+            "没存过颜色开关时应默认显示颜色"
+        )
+        defaults.removePersistentDomain(forName: suite)
+        return failures
+    }
+
+    private static func roundTripsHiddenColor() -> Int {
+        let suite = "com.hnl1.cursorquota.tests.menubar.color"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return TestSupport.expect(false, "无法创建测试用 UserDefaults")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let plain = MenuBarOptions(showsPercent: false, showsUsed: true, showsColor: false)
+        plain.save(to: defaults)
+        let failures = TestSupport.expect(
+            MenuBarOptions.load(from: defaults) == plain,
+            "关掉颜色后应能读回，实际 \(MenuBarOptions.load(from: defaults))"
         )
         defaults.removePersistentDomain(forName: suite)
         return failures

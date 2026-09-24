@@ -82,10 +82,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboard.onShowsUsedChange = { [weak self] showsUsed in
             self?.applyShowsUsed(showsUsed)
         }
+        dashboard.onShowsColorChange = { [weak self] showsColor in
+            self?.applyShowsColor(showsColor)
+        }
         _ = dashboard.view
         dashboard.apply(layout: layout)
         dashboard.apply(showsPercent: menuBarOptions.showsPercent)
         dashboard.apply(showsUsed: menuBarOptions.showsUsed)
+        dashboard.apply(showsColor: menuBarOptions.showsColor)
         dashboardItem.view = dashboard.view
         menu.addItem(dashboardItem)
     }
@@ -111,6 +115,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyShowsUsed(_ showsUsed: Bool) {
         menuBarOptions.showsUsed = showsUsed
+        menuBarOptions.save(to: .standard)
+        render(scene)
+    }
+
+    private func applyShowsColor(_ showsColor: Bool) {
+        menuBarOptions.showsColor = showsColor
         menuBarOptions.save(to: .standard)
         render(scene)
     }
@@ -301,7 +311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = GaugeImage.image(
             for: scene,
             showsPercent: menuBarOptions.showsPercent,
-            showsUsed: menuBarOptions.showsUsed
+            showsUsed: menuBarOptions.showsUsed,
+            showsColor: menuBarOptions.showsColor
         )
         button.title = ""
         button.imagePosition = .imageOnly
