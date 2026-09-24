@@ -34,11 +34,18 @@ struct UsageClient: UsageFetching {
         } else if report.plan == nil, let membership = session.membershipType {
             report = report.replacing(plan: PlanInfo(name: membership.capitalized, price: nil))
         }
-        if let grokData = try? await transport.post(
-            url: AppConfig.grokBotURL,
-            token: session.accessToken
-        ), let grok = UsageParser.parseGrokBot(grokData, at: now()) {
-            report = report.appending(grok)
+        do {
+            let grokData = try await transport.post(
+                url: AppConfig.grokBotURL,
+                token: session.accessToken
+            )
+            if let grok = try UsageParser.parseGrokBot(grokData, at: now()) {
+                report = report.appending(grok)
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            report = report.replacing(grokBotError: error as? QuotaError ?? .unexpectedPayload)
         }
         return report
     }

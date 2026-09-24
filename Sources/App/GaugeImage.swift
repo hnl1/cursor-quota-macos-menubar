@@ -3,7 +3,8 @@ import AppKit
 enum MenuBarScene: Equatable {
     case loading
     case unavailable
-    case readings([UsageReading], isStale: Bool)
+    /// nil 表示勾选了但没有数据，画灰色占位。
+    case readings([UsageReading?], isStale: Bool)
 }
 
 enum GaugeImage {
@@ -67,7 +68,8 @@ enum GaugeImage {
             readings.isEmpty
                 ? [placeholder("—")]
                 : readings.map { reading in
-                    Entry(
+                    guard let reading else { return placeholder(showsPercent ? "—" : "") }
+                    return Entry(
                         text: showsPercent
                             ? "\(showsUsed ? reading.usageUsedPercent : reading.usageRemainingPercent)%"
                             : "",

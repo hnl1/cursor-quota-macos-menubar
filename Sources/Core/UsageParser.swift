@@ -125,10 +125,13 @@ enum UsageParser {
         return nil
     }
 
-    static func parseGrokBot(_ data: Data, at date: Date = Date()) -> UsagePool? {
-        guard let root = try? decodeNode(data) else { return nil }
+    /// 返回 nil 表示账号本来就没有 Grok Bot 额度；数据认不出来时抛错。
+    static func parseGrokBot(_ data: Data, at date: Date = Date()) throws -> UsagePool? {
+        let root = try decodeNode(data)
+        var notIncluded = false
         for node in root.unwrappedCandidates() {
             if node.firstBool(for: ["hasnonzeroincludedlimit"]) == false {
+                notIncluded = true
                 continue
             }
             guard
@@ -152,6 +155,7 @@ enum UsageParser {
                 return pool
             }
         }
+        guard notIncluded else { throw QuotaError.unexpectedPayload }
         return nil
     }
 

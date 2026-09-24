@@ -146,7 +146,7 @@ enum UsageParserTests {
           "hasNonZeroIncludedLimit": true
         }
         """.data(using: .utf8)!
-        let grokPool = UsageParser.parseGrokBot(grok, at: now)
+        let grokPool = try? UsageParser.parseGrokBot(grok, at: now)
         failed += TestSupport.expect(grokPool?.kind == .grokBot, "grok bot pool parses")
         failed += TestSupport.expect(grokPool?.usedPercent == 0, "grok bot unused")
         failed += TestSupport.expect(grokPool?.displayedRemainingPercent == 100, "grok bot 0% used -> 100% left")
@@ -159,10 +159,30 @@ enum UsageParserTests {
           "hasNonZeroIncludedLimit": false
         }
         """.data(using: .utf8)!
-        failed += TestSupport.expect(
-            UsageParser.parseGrokBot(grokDisabled, at: now) == nil,
-            "grok bot without included limit is ignored"
-        )
+        do {
+            let pool = try UsageParser.parseGrokBot(grokDisabled, at: now)
+            failed += TestSupport.expect(pool == nil, "grok bot without included limit is ignored")
+        } catch {
+            failed += TestSupport.expect(false, "grok bot without included limit should not throw")
+        }
+
+        let grokPayloads = [
+            "not json",
+            #"{"usagePercent": 10}"#
+        ]
+        for payload in grokPayloads {
+            do {
+                _ = try UsageParser.parseGrokBot(Data(payload.utf8), at: now)
+                failed += TestSupport.expect(false, "unrecognized grok bot payload should throw: \(payload)")
+            } catch let error as QuotaError {
+                failed += TestSupport.expect(
+                    error == .unexpectedPayload,
+                    "unrecognized grok bot payload maps to unexpectedPayload: \(payload)"
+                )
+            } catch {
+                failed += TestSupport.expect(false, "unrecognized grok bot payload should be QuotaError")
+            }
+        }
         return failed
     }
 }

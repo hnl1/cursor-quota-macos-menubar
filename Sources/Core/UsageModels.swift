@@ -166,23 +166,31 @@ struct PlanInfo: Sendable, Equatable {
     let price: String?
 }
 
+struct MenuBarSlot: Sendable, Equatable {
+    let kind: PoolKind
+    let pool: UsagePool?
+}
+
 struct UsageReport: Sendable, Equatable {
     let pools: [UsagePool]
     let spend: SpendInfo?
     let plan: PlanInfo?
     let fetchedAt: Date
+    let grokBotError: QuotaError?
 
     init?(
         pools: [UsagePool],
         spend: SpendInfo? = nil,
         plan: PlanInfo? = nil,
-        fetchedAt: Date = Date()
+        fetchedAt: Date = Date(),
+        grokBotError: QuotaError? = nil
     ) {
         guard !pools.isEmpty else { return nil }
         self.pools = pools
         self.spend = spend
         self.plan = plan
         self.fetchedAt = fetchedAt
+        self.grokBotError = grokBotError
     }
 
     var billingPools: [UsagePool] {
@@ -218,12 +226,41 @@ struct UsageReport: Sendable, Equatable {
         billingPools.map(\.resetsAt).min() ?? pools[0].resetsAt
     }
 
+    /// 没有数据、或已过重置时间的额度，位置留着但 pool 为 nil。
+    func menuBarSlots(visible: [PoolKind], at date: Date = Date()) -> [MenuBarSlot] {
+        visible.map { kind in
+            MenuBarSlot(kind: kind, pool: pools.first { $0.kind == kind && $0.isActive(at: date) })
+        }
+    }
+
+    /// Grok Bot 临时失败时沿用上次的读数；账号类错误或没有额度时不沿用。
+    func carryingGrokBot(from previous: UsageReport?, at date: Date = Date()) -> UsageReport {
+        guard
+            !pools.contains(where: { $0.kind == .grokBot }),
+            grokBotError?.keepsLastReading == true,
+            let kept = previous?.pools.first(where: { $0.kind == .grokBot && $0.isActive(at: date) })
+        else {
+            return self
+        }
+        return appending(kept)
+    }
+
     func replacing(plan: PlanInfo?) -> UsageReport {
-        UsageReport(pools: pools, spend: spend, plan: plan, fetchedAt: fetchedAt) ?? self
+        UsageReport(
+            pools: pools, spend: spend, plan: plan, fetchedAt: fetchedAt, grokBotError: grokBotError
+        ) ?? self
+    }
+
+    func replacing(grokBotError: QuotaError?) -> UsageReport {
+        UsageReport(
+            pools: pools, spend: spend, plan: plan, fetchedAt: fetchedAt, grokBotError: grokBotError
+        ) ?? self
     }
 
     func appending(_ pool: UsagePool) -> UsageReport {
-        UsageReport(pools: pools + [pool], spend: spend, plan: plan, fetchedAt: fetchedAt) ?? self
+        UsageReport(
+            pools: pools + [pool], spend: spend, plan: plan, fetchedAt: fetchedAt, grokBotError: grokBotError
+        ) ?? self
     }
 }
 

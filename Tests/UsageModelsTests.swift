@@ -123,6 +123,61 @@ enum UsageModelsTests {
             aged?.isStale(at: fetched.addingTimeInterval(AppConfig.staleAfter + 1)) == true,
             "data older than 30 minutes is stale"
         )
+
+        let grok = UsagePool(kind: .grokBot, usedPercent: 30, startsAt: start, resetsAt: end)!
+        let previous = UsageReport(pools: [loose, tight, grok])
+        let mid = TestSupport.date(1_000_000 + 50)
+        let offline = UsageReport(pools: [loose, tight], grokBotError: .offline)!
+        failed += TestSupport.expect(
+            offline.carryingGrokBot(from: previous, at: mid).pools.contains(grok),
+            "temporary grok bot failure keeps the last reading"
+        )
+        failed += TestSupport.expect(
+            offline.carryingGrokBot(from: previous, at: mid).grokBotError == .offline,
+            "carried report still records the grok bot failure"
+        )
+        failed += TestSupport.expect(
+            !offline.carryingGrokBot(from: previous, at: end).pools.contains { $0.kind == .grokBot },
+            "expired grok bot reading is not carried"
+        )
+        failed += TestSupport.expect(
+            !offline.carryingGrokBot(from: nil, at: mid).pools.contains { $0.kind == .grokBot },
+            "nothing to carry without a previous report"
+        )
+        let expired = UsageReport(pools: [loose, tight], grokBotError: .loginExpired)!
+        failed += TestSupport.expect(
+            !expired.carryingGrokBot(from: previous, at: mid).pools.contains { $0.kind == .grokBot },
+            "account grok bot failure clears the last reading"
+        )
+        let notIncluded = UsageReport(pools: [loose, tight])!
+        failed += TestSupport.expect(
+            !notIncluded.carryingGrokBot(from: previous, at: mid).pools.contains { $0.kind == .grokBot },
+            "account without grok bot quota clears the last reading"
+        )
+        let freshGrok = UsagePool(kind: .grokBot, usedPercent: 60, startsAt: start, resetsAt: end)!
+        let fresh = UsageReport(pools: [loose, tight, freshGrok])!
+        failed += TestSupport.expect(
+            fresh.carryingGrokBot(from: previous, at: mid).pools.filter { $0.kind == .grokBot } == [freshGrok],
+            "fresh grok bot reading wins over the last one"
+        )
+
+        let slots = offline.menuBarSlots(visible: [.grokBot, .apiModels, .cursorModels], at: mid)
+        failed += TestSupport.expect(
+            slots.map(\.kind) == [.grokBot, .apiModels, .cursorModels],
+            "menubar slots follow the visible order"
+        )
+        failed += TestSupport.expect(
+            slots.map(\.pool) == [nil, tight, loose],
+            "missing grok bot keeps an empty slot"
+        )
+        failed += TestSupport.expect(
+            offline.menuBarSlots(visible: [.grokBot], at: mid) == [MenuBarSlot(kind: .grokBot, pool: nil)],
+            "only grok bot visible shows its empty slot instead of another quota"
+        )
+        failed += TestSupport.expect(
+            fresh.menuBarSlots(visible: [.grokBot], at: end).first?.pool == nil,
+            "expired reading counts as missing"
+        )
         return failed
     }
 }

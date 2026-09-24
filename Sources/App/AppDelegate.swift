@@ -254,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func apply(report: UsageReport) {
+        let report = report.carryingGrokBot(from: self.report)
         self.report = report
         staleMessage = nil
         dashboard.show(report: report)
@@ -281,22 +282,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateMenuBar(with report: UsageReport, at date: Date = Date()) {
-        let picked = layout.visible.compactMap { kind in
-            report.pools.first { $0.kind == kind }
-        }
-        let pools = picked.isEmpty
-            ? [report.headlinePool(at: date, among: Set(layout.visible))]
-            : picked
-        let readings = pools.map { $0.reading(at: date) }
+        let slots = report.menuBarSlots(visible: layout.visible, at: date)
+        let readings = slots.map { $0.pool?.reading(at: date) }
         render(.readings(readings, isStale: report.isStale(at: date)))
         statusItem?.button?.setAccessibilityValue(
-            zip(pools, readings)
-                .map { pool, reading in
+            zip(slots, readings)
+                .map { slot, reading in
+                    guard let reading else { return "\(slot.kind.shortTitle)用量不可用" }
                     let used = menuBarOptions.showsUsed
                     let usage = used ? reading.usageUsedPercent : reading.usageRemainingPercent
                     let time = used ? reading.timeElapsedPercent : reading.timeRemainingPercent
-                    return "\(pool.kind.shortTitle)\(used ? "已用" : "剩余") \(usage)%，"
-                        + "\(pool.kind.timeTitle(showsUsed: used)) \(time)%"
+                    return "\(slot.kind.shortTitle)\(used ? "已用" : "剩余") \(usage)%，"
+                        + "\(slot.kind.timeTitle(showsUsed: used)) \(time)%"
                 }
                 .joined(separator: "；")
         )
