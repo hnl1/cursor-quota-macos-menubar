@@ -434,19 +434,27 @@ final class PopoverController: NSViewController {
     }
 
     private static func percentMark(in rect: NSRect) {
-        let text = "%" as NSString
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
-            .foregroundColor: NSColor.black
-        ]
-        let size = text.size(withAttributes: attributes)
-        text.draw(
-            at: NSPoint(
-                x: rect.midX - size.width / 2,
-                y: rect.midY - size.height / 2 - 0.4
-            ),
-            withAttributes: attributes
-        )
+        let dotRadius: CGFloat = 2.0
+        let dotOffset: CGFloat = 3.0
+        NSColor.black.setStroke()
+        for (dx, dy) in [(-dotOffset, dotOffset), (dotOffset, -dotOffset)] {
+            let dot = NSBezierPath()
+            dot.appendArc(
+                withCenter: NSPoint(x: rect.midX + dx, y: rect.midY + dy),
+                radius: dotRadius,
+                startAngle: 0,
+                endAngle: 360
+            )
+            // 小圆用 1.8 会把内孔糊掉，细一点和整排图标的轻重才一致。
+            dot.lineWidth = 1.5
+            dot.stroke()
+        }
+        let slash = NSBezierPath()
+        slash.move(to: NSPoint(x: rect.midX - 3.6, y: rect.midY - 5.0))
+        slash.line(to: NSPoint(x: rect.midX + 3.6, y: rect.midY + 5.0))
+        slash.lineWidth = 1.8
+        slash.lineCapStyle = .round
+        slash.stroke()
     }
 
     private static func ringMark(in rect: NSRect) {
