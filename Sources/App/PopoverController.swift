@@ -512,7 +512,9 @@ final class PopoverController: NSViewController {
             path.lineWidth = usageRingWidth
             path.stroke()
         }
-        let head = usageArrowHead(center: center, at: boundary, clockwise: showsUsed)
+        let head = showsUsed
+            ? usageArrowHead(center: center, at: boundary, clockwise: true)
+            : usageArrowHead(center: center, at: boundary, clockwise: false, length: 3.8, halfWidth: 2.9)
         NSColor.black.set()
         if showsUsed {
             NSColor.black.withAlphaComponent(trackAlpha).setStroke()
@@ -529,7 +531,7 @@ final class PopoverController: NSViewController {
         NSGraphicsContext.current?.compositingOperation = .sourceOver
         // 轨道和箭头在同一透明层里画成实色再整体变淡，重叠处不会加深。
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.setAlpha(trackAlpha)
+        context.setAlpha(0.5)
         context.beginTransparencyLayer(auxiliaryInfo: nil)
         arc(from: boundary, to: 1)
         head.fill()
@@ -538,9 +540,13 @@ final class PopoverController: NSViewController {
     }
 
     /// 底边中点落在圆环上 fraction 处，尖端沿切线伸出。
-    private static func usageArrowHead(center: NSPoint, at fraction: CGFloat, clockwise: Bool) -> NSBezierPath {
-        let length: CGFloat = 3.0
-        let halfWidth: CGFloat = 2.6
+    private static func usageArrowHead(
+        center: NSPoint,
+        at fraction: CGFloat,
+        clockwise: Bool,
+        length: CGFloat = 3.0,
+        halfWidth: CGFloat = 2.6
+    ) -> NSBezierPath {
         let angle = (90 - 360 * fraction) * .pi / 180
         let normal = NSPoint(x: cos(angle), y: sin(angle))
         let direction: CGFloat = clockwise ? 1 : -1
