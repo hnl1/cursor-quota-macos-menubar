@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private let client: any UsageFetching
     private let menu = NSMenu()
     private let dashboardItem = NSMenuItem()
@@ -69,7 +69,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func configureMenu() {
         menu.autoenablesItems = false
-        menu.delegate = self
         dashboard.onRefresh = { [weak self] in self?.refresh() }
         dashboard.onContentSizeChange = { [weak self] size in
             self?.applyDashboardSize(size)
@@ -94,10 +93,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyDashboardSize(_ size: NSSize) {
         dashboard.view.frame = NSRect(origin: .zero, size: size)
         dashboardItem.view = dashboard.view
-    }
-
-    func menuWillOpen(_ menu: NSMenu) {
-        refresh()
     }
 
     private func applyLayout(_ layout: PanelLayout) {
