@@ -303,41 +303,30 @@ final class PopoverController: NSViewController {
     }
 
     private func makeHeader() -> NSView {
-        let spacer = flexibleSpacer()
-        let spendRow = NSStackView(views: [spendLabel, spacer, refreshButton])
-        spendRow.orientation = .horizontal
-        spendRow.alignment = .centerY
-        spendRow.spacing = 8
-        spendRow.detachesHiddenViews = true
-        let column = NSStackView(views: [titleLabel, spendRow])
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = 4
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            spendRow.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            spendRow.trailingAnchor.constraint(equalTo: column.trailingAnchor)
-        ])
-        alignTrailingContent(of: refreshButton, in: spendRow)
-        return column
+        let row = NSStackView(views: [titleLabel, flexibleSpacer(), spendLabel])
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 8
+        row.detachesHiddenViews = true
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: ComparisonMeter.markTrailingInset)
+        return row
     }
 
     private func makeFooter() -> NSView {
-        let switches = NSStackView(views: [usageButton, percentButton, loginButton])
+        let switches = NSStackView(views: [usageButton, percentButton, loginButton, quitButton])
         switches.orientation = .horizontal
         switches.alignment = .centerY
         switches.spacing = 2
         switches.clipsToBounds = false
-        let controls = NSStackView(views: [switches, flexibleSpacer(), quitButton])
+        let controls = NSStackView(views: [refreshButton, flexibleSpacer(), switches])
         controls.orientation = .horizontal
         controls.alignment = .centerY
         controls.spacing = 8
         controls.clipsToBounds = false
-        // 图标比套餐行往右偏一个按钮内边距加画布留白。把这组开关拉回来，圆环轨道的左缘才和字对齐。
-        // 对齐轨道而不是箭头：剩余状态的箭头伸到轨道外，按它对齐会在切换时左右跳。
-        let align = switches.leadingAnchor.constraint(
+        // 图标比套餐行往右偏一个按钮内边距。把刷新按钮拉回来，图标左缘才和字对齐。
+        let align = refreshButton.leadingAnchor.constraint(
             equalTo: controls.leadingAnchor,
-            constant: -(usageButton.imageLeadingInset + Self.usageRingLeadingInset)
+            constant: -refreshButton.imageLeadingInset
         )
         align.priority = .required
         align.isActive = true
@@ -346,7 +335,7 @@ final class PopoverController: NSViewController {
         return controls
     }
 
-    /// 时间和退出图标比额度行的对勾更靠里，差的是按钮自己的内边距。
+    /// 退出图标比额度行的对勾更靠里，差的是按钮自己的内边距。
     /// 右内边距取负，按钮画出这一行，内容右缘才和勾对齐。
     private func alignTrailingContent(of button: HoverButton, in row: NSStackView) {
         row.clipsToBounds = false
@@ -440,7 +429,6 @@ final class PopoverController: NSViewController {
 
     private static let usageRingRadius: CGFloat = 5.1
     private static let usageRingWidth: CGFloat = 2.2
-    private static let usageRingLeadingInset = 8 - usageRingRadius - usageRingWidth / 2
 
     private static func iconImage(flipped: Bool = false, _ draw: @escaping (NSRect) -> Void) -> NSImage {
         let image = NSImage(size: NSSize(width: 16, height: 16), flipped: flipped) { rect in
