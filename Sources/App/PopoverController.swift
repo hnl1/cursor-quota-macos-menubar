@@ -13,11 +13,11 @@ final class PopoverController: NSViewController {
     private let titleLabel = NSTextField(labelWithString: "Cursor 额度")
     private let errorLabel = NSTextField(labelWithString: "")
     private let spendLabel = NSTextField(labelWithString: "")
-    private let percentButton = HoverButton(title: "菜单栏%", symbol: "checkmark", pointSize: 13)
-    private let usageButton = HoverButton(title: "展示已用", symbol: "checkmark", pointSize: 13)
-    private let loginButton = HoverButton(title: "开机自启", symbol: "checkmark", pointSize: 13)
-    private let refreshButton = HoverButton(title: "--:--:--", symbol: "arrow.clockwise", pointSize: 13)
-    private let quitButton = HoverButton(title: "退出", symbol: "power", pointSize: 13, imageOnly: true)
+    private let percentButton = HoverButton(title: "菜单栏%")
+    private let usageButton = HoverButton(title: "展示已用")
+    private let loginButton = HoverButton(title: "开机自启")
+    private let refreshButton = HoverButton(title: "--:--:--", image: PopoverController.refreshImage)
+    private let quitButton = HoverButton(title: "退出", image: PopoverController.powerImage, imageOnly: true)
     private let meters: [PoolKind: ComparisonMeter] = Dictionary(
         uniqueKeysWithValues: PoolKind.allCases.map { ($0, ComparisonMeter()) }
     )
@@ -396,7 +396,6 @@ final class PopoverController: NSViewController {
     private func prepareIconButton(_ button: HoverButton) {
         button.imagePosition = .imageOnly
         button.title = ""
-        button.symbolConfiguration = nil
     }
 
     private func stylePercentButton() {
@@ -426,6 +425,8 @@ final class PopoverController: NSViewController {
     private static let plugOffImage = iconImage(flipped: true) { drawPlug(in: $0, slashed: true) }
     private static let usedImage = iconImage { usageRing(in: $0, showsUsed: true) }
     private static let remainingImage = iconImage { usageRing(in: $0, showsUsed: false) }
+    private static let refreshImage = iconImage { drawRefresh(in: $0) }
+    private static let powerImage = iconImage { drawPower(in: $0) }
 
     private static let usageRingRadius: CGFloat = 5.1
     private static let usageRingWidth: CGFloat = 2.2
@@ -565,25 +566,78 @@ final class PopoverController: NSViewController {
         slash.stroke()
     }
 
+    private static func drawRefresh(in rect: NSRect) {
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let radius: CGFloat = 4.85
+        let lineWidth: CGFloat = 1.8
+        // 顺时针约 250°，缺口朝右；箭头落在缺口上沿。
+        let endAngle: CGFloat = 55
+        let arc = NSBezierPath()
+        arc.appendArc(
+            withCenter: center,
+            radius: radius,
+            startAngle: -55,
+            endAngle: endAngle,
+            clockwise: true
+        )
+        arc.lineWidth = lineWidth
+        arc.lineCapStyle = .round
+        NSColor.black.set()
+        arc.stroke()
+
+        let theta = endAngle * .pi / 180
+        let radial = NSPoint(x: cos(theta), y: sin(theta))
+        let tangent = NSPoint(x: sin(theta), y: -cos(theta))
+        let base = NSPoint(x: center.x + radius * radial.x, y: center.y + radius * radial.y)
+        let length: CGFloat = 3.1
+        let half: CGFloat = 2.35
+        let head = NSBezierPath()
+        head.move(to: NSPoint(x: base.x + tangent.x * length, y: base.y + tangent.y * length))
+        head.line(to: NSPoint(x: base.x + radial.x * half, y: base.y + radial.y * half))
+        head.line(to: NSPoint(x: base.x - radial.x * half, y: base.y - radial.y * half))
+        head.close()
+        head.fill()
+    }
+
+    private static func drawPower(in rect: NSRect) {
+        let center = NSPoint(x: rect.midX, y: rect.midY - 0.35)
+        let radius: CGFloat = 4.7
+        let lineWidth: CGFloat = 1.8
+        NSColor.black.set()
+        let stem = NSBezierPath()
+        stem.move(to: NSPoint(x: center.x, y: center.y + 1.0))
+        stem.line(to: NSPoint(x: center.x, y: center.y + 6.1))
+        stem.lineWidth = lineWidth
+        stem.lineCapStyle = .round
+        stem.stroke()
+        let ring = NSBezierPath()
+        ring.appendArc(
+            withCenter: center,
+            radius: radius,
+            startAngle: 130,
+            endAngle: 50,
+            clockwise: false
+        )
+        ring.lineWidth = lineWidth
+        ring.lineCapStyle = .round
+        ring.stroke()
+    }
+
     private static func spinRingImage() -> NSImage {
-        let side: CGFloat = 13
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
+        iconImage { rect in
             let path = NSBezierPath()
             path.appendArc(
-                withCenter: NSPoint(x: side / 2, y: side / 2),
-                radius: 4.15,
+                withCenter: NSPoint(x: rect.midX, y: rect.midY),
+                radius: 4.85,
                 startAngle: 40,
                 endAngle: 320,
                 clockwise: false
             )
-            path.lineWidth = 1.1
+            path.lineWidth = 1.8
             path.lineCapStyle = .round
-            NSColor.labelColor.setStroke()
+            NSColor.black.setStroke()
             path.stroke()
-            return true
         }
-        image.isTemplate = true
-        return image
     }
 
     private func errorRow(_ message: String) -> NSView {
@@ -694,16 +748,12 @@ private final class HoverButton: NSButton {
 
     convenience init(
         title: String,
-        symbol: String,
-        pointSize: CGFloat = 11,
+        image: NSImage? = nil,
         imageOnly: Bool = false
     ) {
         self.init(frame: .zero)
         self.title = imageOnly ? "" : title
-        let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
-        symbolConfiguration = configuration
-        image = symbolImage?.withSymbolConfiguration(configuration)
+        self.image = image
         baseImage = image
         idleImage = image
         imagePosition = imageOnly ? .imageOnly : .imageLeading

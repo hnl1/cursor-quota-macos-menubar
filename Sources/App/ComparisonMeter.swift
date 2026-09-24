@@ -289,17 +289,27 @@ final class ComparisonMeter: NSView {
         needsDisplay = true
     }
 
-    /// 对勾在盒子里居中，图像视图又按符号的对齐矩形缩进，所以勾的右缘离行尾是留白的一半。
+    /// 对勾图画布小于 mark 盒子且居中，右缘离行尾是两侧留白的一半。
     static var markTrailingInset: CGFloat {
         guard let image = checkImage else { return 0 }
-        return (markSide - image.alignmentRect.width) / 2
+        return (markSide - image.size.width) / 2
     }
 
     private static let checkImage: NSImage? = {
-        let image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
-        image?.isTemplate = true
-        return image?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        )
+        let size = NSSize(width: 16, height: 16)
+        let image = NSImage(size: size, flipped: false) { _ in
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: 3.2, y: 8.3))
+            path.line(to: NSPoint(x: 6.7, y: 4.7))
+            path.line(to: NSPoint(x: 12.8, y: 11.5))
+            path.lineWidth = 1.9
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            NSColor.black.setStroke()
+            path.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }()
 }
