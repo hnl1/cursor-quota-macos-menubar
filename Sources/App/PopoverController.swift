@@ -574,19 +574,19 @@ final class PopoverController: NSViewController {
             NSRect(x: x * scale, y: y * scale, width: width * scale, height: height * scale)
         }
         NSColor.black.set()
-        NSBezierPath(roundedRect: box(7.15, 2.05, 2.45, 4.7), xRadius: 0.7 * scale, yRadius: 0.7 * scale).fill()
-        NSBezierPath(roundedRect: box(14.4, 2.05, 2.45, 4.7), xRadius: 0.7 * scale, yRadius: 0.7 * scale).fill()
+        NSBezierPath(roundedRect: box(7.025, 2.05, 2.7, 4.7), xRadius: 0.7 * scale, yRadius: 0.7 * scale).fill()
+        NSBezierPath(roundedRect: box(14.275, 2.05, 2.7, 4.7), xRadius: 0.7 * scale, yRadius: 0.7 * scale).fill()
         let body = NSBezierPath(
             roundedRect: box(5.25, 6.15, 13.5, 10.15),
             xRadius: 2.45 * scale,
             yRadius: 2.45 * scale
         )
-        body.lineWidth = 1.9 * scale
+        body.lineWidth = 2.7 * scale
         body.stroke()
         let cord = NSBezierPath()
         cord.move(to: NSPoint(x: 12 * scale, y: 16.3 * scale))
         cord.line(to: NSPoint(x: 12 * scale, y: 21.15 * scale))
-        cord.lineWidth = 1.9 * scale
+        cord.lineWidth = 2.7 * scale
         cord.lineCapStyle = .round
         cord.stroke()
         guard slashed else { return }
@@ -595,11 +595,11 @@ final class PopoverController: NSViewController {
         slash.line(to: NSPoint(x: 19.3 * scale, y: 4.7 * scale))
         slash.lineCapStyle = .round
         NSGraphicsContext.current?.compositingOperation = .destinationOut
-        slash.lineWidth = 3.6 * scale
+        slash.lineWidth = 5.2 * scale
         slash.stroke()
         NSGraphicsContext.current?.compositingOperation = .sourceOver
         NSColor.black.setStroke()
-        slash.lineWidth = 1.85 * scale
+        slash.lineWidth = 2.6 * scale
         slash.stroke()
     }
 
