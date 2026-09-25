@@ -18,9 +18,9 @@ final class PopoverController: NSViewController {
     var onShowsColorChange: ((Bool) -> Void)?
 
     private let stack = NSStackView()
-    private let titleLabel = NSTextField(labelWithString: "Cursor 额度")
+    private let titleLabel = LinkLabel(labelWithString: "Cursor 额度")
     private let errorLabel = NSTextField(labelWithString: "")
-    private let spendLabel = NSTextField(labelWithString: "")
+    private let spendLabel = LinkLabel(labelWithString: "")
     private let percentButton = HoverButton(title: "菜单栏%")
     private let usageButton = HoverButton(title: "展示已用")
     private let colorButton = HoverButton(title: "显示颜色")
@@ -307,6 +307,10 @@ final class PopoverController: NSViewController {
         spendLabel.font = .systemFont(ofSize: 11)
         spendLabel.alignment = .left
         spendLabel.setContentHuggingPriority(.required, for: .horizontal)
+        titleLabel.toolTip = "打开 Cursor 用量额度页"
+        titleLabel.onClick = { [weak self] in self?.openPage(AppConfig.spendingPageURL) }
+        spendLabel.toolTip = "打开 Cursor 用量明细页"
+        spendLabel.onClick = { [weak self] in self?.openPage(AppConfig.usagePageURL) }
         configure(percentButton, action: #selector(percentTapped))
         configure(usageButton, action: #selector(usageTapped))
         configure(colorButton, action: #selector(colorTapped))
@@ -749,6 +753,11 @@ final class PopoverController: NSViewController {
         onRefresh?()
     }
 
+    private func openPage(_ url: URL) {
+        view.enclosingMenuItem?.menu?.cancelTrackingWithoutAnimation()
+        NSWorkspace.shared.open(url)
+    }
+
     @objc private func percentTapped() {
         showsPercent.toggle()
         styleChrome()
@@ -868,6 +877,74 @@ private final class HoverButtonCell: NSButtonCell {
         guard !cell.title.isEmpty else { return .zero }
         let font = cell.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
         return cell.title.size(withAttributes: [.font: font])
+    }
+}
+
+@MainActor
+private final class LinkLabel: NSTextField {
+    var onClick: (() -> Void)?
+    private var hovered = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
+        if pointerInside {
+            options.insert(.assumeInside)
+        }
+        addTrackingArea(NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil))
+        syncHover()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHovered(false)
+    }
+
+    /// 菜单跟踪期间松手事件不走常规派发，只能自己在 eventTracking 模式下等。
+    override func mouseDown(with event: NSEvent) {
+        MenuTip.cancel()
+        guard let window else { return }
+        while let next = window.nextEvent(
+            matching: [.leftMouseDragged, .leftMouseUp],
+            until: .distantFuture,
+            inMode: .eventTracking,
+            dequeue: true
+        ) {
+            guard next.type == .leftMouseUp else { continue }
+            if bounds.contains(convert(next.locationInWindow, from: nil)) {
+                onClick?()
+            }
+            break
+        }
+    }
+
+    private var pointerInside: Bool {
+        guard let window else { return false }
+        return bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    private func syncHover() {
+        guard window != nil else { return }
+        setHovered(pointerInside)
+    }
+
+    private func setHovered(_ value: Bool) {
+        guard hovered != value else { return }
+        hovered = value
+        if value {
+            MenuTip.schedule(from: self, delay: MenuTip.defaultDelay * 2)
+        } else {
+            MenuTip.cancel(from: self)
+        }
     }
 }
 
@@ -1035,12 +1112,13 @@ private enum MenuTip {
     private static var panel: NSWindow?
     private static var timer: Timer?
     private static weak var owner: NSView?
+    static let defaultDelay: TimeInterval = 0.45
 
-    static func schedule(from view: NSView) {
+    static func schedule(from view: NSView, delay: TimeInterval = defaultDelay) {
         cancel()
         guard let text = view.toolTip, !text.isEmpty else { return }
         owner = view
-        let timer = Timer(timeInterval: 0.45, repeats: false) { [weak view] _ in
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak view] _ in
             Task { @MainActor in
                 guard let view else { return }
                 show(view.toolTip ?? "", from: view)

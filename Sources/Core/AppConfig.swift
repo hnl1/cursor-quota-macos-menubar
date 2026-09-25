@@ -27,6 +27,8 @@ enum AppConfig {
     static let grokBotURL = URL(
         string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus"
     )!
+    static let spendingPageURL = URL(string: "https://cursor.com/dashboard/spending")!
+    static let usagePageURL = URL(string: "https://cursor.com/dashboard/usage")!
 
     static func isAllowed(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https"
