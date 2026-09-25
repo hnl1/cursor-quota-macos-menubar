@@ -1,18 +1,18 @@
 # macOS 菜单栏展示 Cursor 额度
 
-![菜单栏圆环和明细面板](docs/panel.jpg)
+<img src="docs/panel.jpg" alt="菜单栏圆环和明细面板" width="354">
 
 在 macOS 的菜单栏展示你现在使用的 Cursor 账号用量情况，三个额度分别为 Cursor 模型、其他模型和 Grok Bot 周额度，需要本机已经使用并登录过 Cursor
 
 ## ✨ 功能介绍
 
-![三个彩色圆环](docs/menubar-rings.jpg)
+<img src="docs/menubar-rings.jpg" alt="三个彩色圆环" width="91">
 
-![圆环带百分比](docs/menubar-percent.jpg)
+<img src="docs/menubar-percent.jpg" alt="圆环带百分比" width="196">
 
-![单色圆环](docs/menubar-mono.jpg)
+<img src="docs/menubar-mono.jpg" alt="单色圆环" width="87">
 
-![单个圆环带百分比](docs/menubar-single.jpg)
+<img src="docs/menubar-single.jpg" alt="单个圆环带百分比" width="79">
 
 - 选择展示项：点选、拖动控制要展示的额度与顺序
 - 方向可选：可选展示剩余额度与剩余账期或者已用额度与已过账期
