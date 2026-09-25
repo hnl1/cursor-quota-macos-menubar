@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var refreshObserver: NSObjectProtocol?
     private var hookObserver: NSObjectProtocol?
     private var layout = PanelLayout.load(from: .standard)
+    private var previewLayout: PanelLayout?
     private var menuBarOptions = MenuBarOptions.load(from: .standard)
     private var scene: MenuBarScene = .loading
 
@@ -76,6 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboard.onLayoutChange = { [weak self] layout in
             self?.applyLayout(layout)
         }
+        dashboard.onLayoutPreview = { [weak self] layout in
+            self?.applyLayoutPreview(layout)
+        }
         dashboard.onShowsPercentChange = { [weak self] showsPercent in
             self?.applyShowsPercent(showsPercent)
         }
@@ -101,7 +105,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyLayout(_ layout: PanelLayout) {
         self.layout = layout
+        previewLayout = nil
         layout.save(to: .standard)
+        if let report {
+            updateMenuBar(with: report)
+        }
+    }
+
+    private func applyLayoutPreview(_ layout: PanelLayout?) {
+        previewLayout = layout
         if let report {
             updateMenuBar(with: report)
         }
@@ -287,7 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateMenuBar(with report: UsageReport, at date: Date = Date()) {
-        let slots = report.menuBarSlots(visible: layout.visible, at: date)
+        let slots = report.menuBarSlots(visible: (previewLayout ?? layout).visible, at: date)
         let readings = slots.map { $0.pool?.reading(at: date) }
         render(.readings(readings, isStale: report.isStale(at: date)))
         statusItem?.button?.setAccessibilityValue(

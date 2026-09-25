@@ -61,6 +61,23 @@ struct PanelLayout: Sendable, Equatable {
         }
         order.swapAt(index, index + offset)
     }
+
+    mutating func move(_ kind: PoolKind, to index: Int) {
+        guard let current = order.firstIndex(of: kind) else { return }
+        order.remove(at: current)
+        order.insert(kind, at: min(max(index, 0), order.count))
+    }
+
+    /// `centers` 是各行原位置的中点，从上到下排列，y 向上。
+    /// 与某行中点恰好齐平也算越过，否则被限位在边缘时落不到首末位。
+    static func dropIndex(centers: [CGFloat], from: Int, draggedCenter: CGFloat) -> Int {
+        var index = 0
+        for (row, center) in centers.enumerated() where row != from {
+            let staysAbove = row < from ? center > draggedCenter : center >= draggedCenter
+            if staysAbove { index += 1 }
+        }
+        return index
+    }
 }
 
 extension PanelLayout {

@@ -224,6 +224,15 @@ final class ComparisonMeter: NSView {
         }
     }
 
+    func snapshot() -> NSImage {
+        let image = NSImage(size: bounds.size)
+        if let rep = bitmapImageRepForCachingDisplay(in: bounds) {
+            cacheDisplay(in: bounds, to: rep)
+            image.addRepresentation(rep)
+        }
+        return image
+    }
+
     func update(
         kind: PoolKind,
         pool: UsagePool?,

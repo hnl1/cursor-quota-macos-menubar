@@ -7,6 +7,9 @@ enum PanelLayoutTests {
         failures += fillsMissingKinds()
         failures += keepsAtLeastOneVisible()
         failures += movesWithinBounds()
+        failures += movesToIndex()
+        failures += dropIndexFollowsDraggedCenter()
+        failures += dropIndexReachesEdgesOnTie()
         failures += roundTripsThroughDefaults()
         return failures
     }
@@ -73,6 +76,70 @@ enum PanelLayoutTests {
         failures += TestSupport.expect(
             !layout.canMove(.cursorModels, by: -1) && layout.canMove(.cursorModels, by: 1),
             "首项只能下移"
+        )
+        return failures
+    }
+
+    private static func movesToIndex() -> Int {
+        var layout = PanelLayout.default
+        layout.move(.cursorModels, to: 2)
+        var failures = TestSupport.expect(
+            layout.order == [.apiModels, .grokBot, .cursorModels],
+            "移到末位后顺序不对，实际 \(layout.order)"
+        )
+        layout.move(.cursorModels, to: 0)
+        failures += TestSupport.expect(
+            layout.order == PoolKind.allCases,
+            "移回首位后顺序不对，实际 \(layout.order)"
+        )
+        layout.move(.apiModels, to: 9)
+        failures += TestSupport.expect(
+            layout.order == [.cursorModels, .grokBot, .apiModels],
+            "越界下标应截到末位，实际 \(layout.order)"
+        )
+        layout.move(.apiModels, to: -3)
+        failures += TestSupport.expect(
+            layout.order == [.apiModels, .cursorModels, .grokBot],
+            "负下标应截到首位，实际 \(layout.order)"
+        )
+        return failures
+    }
+
+    /// 坐标沿用 AppKit：y 向上，从上到下的行中点依次变小。
+    private static let rowCenters: [CGFloat] = [200, 134, 68]
+
+    private static func dropIndexFollowsDraggedCenter() -> Int {
+        var failures = TestSupport.expect(
+            PanelLayout.dropIndex(centers: rowCenters, from: 0, draggedCenter: 180) == 0,
+            "没越过下一行中点应留在原位"
+        )
+        failures += TestSupport.expect(
+            PanelLayout.dropIndex(centers: rowCenters, from: 0, draggedCenter: 120) == 1,
+            "越过第二行中点应落到第二位"
+        )
+        failures += TestSupport.expect(
+            PanelLayout.dropIndex(centers: rowCenters, from: 0, draggedCenter: 20) == 2,
+            "越过全部行应落到末位"
+        )
+        failures += TestSupport.expect(
+            PanelLayout.dropIndex(centers: rowCenters, from: 2, draggedCenter: 150) == 1,
+            "向上越过第二行中点应落到第二位"
+        )
+        failures += TestSupport.expect(
+            PanelLayout.dropIndex(centers: rowCenters, from: 2, draggedCenter: 260) == 0,
+            "向上越过全部行应落到首位"
+        )
+        return failures
+    }
+
+    private static func dropIndexReachesEdgesOnTie() -> Int {
+        var failures = TestSupport.expect(
+            PanelLayout.dropIndex(centers: rowCenters, from: 1, draggedCenter: 68) == 2,
+            "中点与末行重合时应落到末位"
+        )
+        failures += TestSupport.expect(
+            PanelLayout.dropIndex(centers: rowCenters, from: 1, draggedCenter: 200) == 0,
+            "中点与首行重合时应落到首位"
         )
         return failures
     }

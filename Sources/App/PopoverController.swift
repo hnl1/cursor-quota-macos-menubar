@@ -11,6 +11,8 @@ final class PopoverController: NSViewController {
     var onRefresh: (() -> Void)?
     var onContentSizeChange: ((NSSize) -> Void)?
     var onLayoutChange: ((PanelLayout) -> Void)?
+    /// 拖动中按落点预览菜单栏顺序，不落盘；传 nil 结束预览。
+    var onLayoutPreview: ((PanelLayout?) -> Void)?
     var onShowsPercentChange: ((Bool) -> Void)?
     var onShowsUsedChange: ((Bool) -> Void)?
     var onShowsColorChange: ((Bool) -> Void)?
@@ -40,8 +42,9 @@ final class PopoverController: NSViewController {
     private var refreshedAt: Date?
     private var clockAlert = false
     private var placeholderMessage = "正在读取 Cursor 用量…"
-    private var dragKind: PoolKind?
-    private var dragStartFrames: [PoolKind: NSRect] = [:]
+    private var dragOverlay: RowDragOverlay?
+    private var dragStartFrame = NSRect.zero
+    private var dragCenters: [CGFloat] = []
     private var dragFromIndex = 0
     private var dragToIndex = 0
 
@@ -225,59 +228,58 @@ final class PopoverController: NSViewController {
     }
 
     private func updateRowDrag(_ kind: PoolKind, deltaY: CGFloat) {
-        guard let frame = dragStartFrames[kind] ?? startRowDrag(kind) else { return }
-        let order = layout.order
-        let height = frame.height
-        let minY = dragStartFrames.values.map(\.minY).min() ?? frame.minY
-        let maxY = dragStartFrames.values.map(\.maxY).max() ?? frame.maxY
-        let proposed = min(max(frame.minY + deltaY, minY), maxY - height)
-        guard let meter = meters[kind] else { return }
-        meter.frame.origin.y = proposed
-        let visualMid = proposed + height / 2
-        var target = 0
-        for (index, item) in order.enumerated() where index != dragFromIndex {
-            let mid = dragStartFrames[item]?.midY ?? visualMid
-            if mid > visualMid { target += 1 }
+        if dragOverlay == nil {
+            startRowDrag(kind)
         }
+        guard let overlay = dragOverlay else { return }
+        let margin: CGFloat = 6
+        let height = dragStartFrame.height
+        let lowest = view.bounds.minY + margin
+        let highest = view.bounds.maxY - margin - height
+        let minY = min(max(dragStartFrame.minY + deltaY, lowest), highest)
+        overlay.moveDragged(toMinY: minY)
+
+        let target = PanelLayout.dropIndex(
+            centers: dragCenters,
+            from: dragFromIndex,
+            draggedCenter: minY + height / 2
+        )
+        guard target != dragToIndex else { return }
         dragToIndex = target
-        for (index, item) in order.enumerated() {
-            guard item != kind, let origin = dragStartFrames[item], let view = meters[item] else { continue }
-            var shift: CGFloat = 0
-            if dragToIndex > dragFromIndex, index > dragFromIndex, index <= dragToIndex {
-                shift = height
-            }
-            if dragToIndex < dragFromIndex, index >= dragToIndex, index < dragFromIndex {
-                shift = -height
-            }
-            view.frame.origin.y = origin.minY + shift
-        }
+        overlay.setTarget(target)
+        var preview = layout
+        preview.move(kind, to: target)
+        onLayoutPreview?(preview)
     }
 
-    private func startRowDrag(_ kind: PoolKind) -> NSRect? {
-        dragKind = kind
-        dragFromIndex = layout.order.firstIndex(of: kind) ?? 0
-        dragToIndex = dragFromIndex
-        dragStartFrames = Dictionary(uniqueKeysWithValues: layout.order.compactMap { item in
-            guard let meter = meters[item] else { return nil }
-            return (item, meter.frame)
-        })
-        return dragStartFrames[kind]
+    private func startRowDrag(_ kind: PoolKind) {
+        let rows = layout.order.compactMap { meters[$0] }
+        guard let from = layout.order.firstIndex(of: kind), rows.count == layout.order.count else { return }
+        let snapshots = rows.map { meter in
+            (image: meter.snapshot(), frame: meter.convert(meter.bounds, to: view))
+        }
+        dragFromIndex = from
+        dragToIndex = from
+        dragStartFrame = snapshots[from].frame
+        dragCenters = snapshots.map(\.frame.midY)
+        let overlay = RowDragOverlay(frame: view.bounds, snapshots: snapshots, draggedIndex: from)
+        view.addSubview(overlay)
+        dragOverlay = overlay
+        rows.forEach { $0.alphaValue = 0 }
     }
 
     private func finishRowDrag(_ kind: PoolKind) {
-        let steps = dragToIndex - dragFromIndex
-        dragKind = nil
-        dragStartFrames = [:]
-        guard steps != 0 else {
+        guard let overlay = dragOverlay else { return }
+        overlay.removeFromSuperview()
+        dragOverlay = nil
+        meters.values.forEach { $0.alphaValue = 1 }
+        let target = dragToIndex
+        guard target != dragFromIndex else {
+            onLayoutPreview?(nil)
             refreshRows()
             return
         }
-        changeLayout { layout in
-            let direction = steps > 0 ? 1 : -1
-            for _ in 0..<abs(steps) {
-                layout.move(kind, by: direction)
-            }
-        }
+        changeLayout { $0.move(kind, to: target) }
     }
 
     private func changeLayout(_ change: (inout PanelLayout) -> Void) {
@@ -720,7 +722,9 @@ final class PopoverController: NSViewController {
         button.action = action
     }
 
+    /// 拖动中重建会让隐藏的行重新出现、和浮层叠在一起；松手后总会再重建一次。
     private func replace(with views: [NSView]) {
+        guard dragOverlay == nil else { return }
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()
