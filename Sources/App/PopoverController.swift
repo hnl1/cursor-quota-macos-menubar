@@ -4,6 +4,8 @@ import ServiceManagement
 enum PanelMetrics {
     /// 灰底列到可见内容的左右距离。
     static let contentInset: CGFloat = 6
+    /// 纯图标按钮从画布边缘量起，图标自带留白，所以比 contentInset 小。
+    static let iconButtonInset: CGFloat = 5
 }
 
 @MainActor
@@ -319,6 +321,7 @@ final class PopoverController: NSViewController {
         prepareIconButton(percentButton)
         prepareIconButton(colorButton)
         prepareIconButton(loginButton)
+        prepareIconButton(quitButton)
         configure(refreshButton, action: #selector(refreshTapped))
         configure(quitButton, action: #selector(quitTapped))
         refreshButton.toolTip = "刷新"
@@ -346,7 +349,7 @@ final class PopoverController: NSViewController {
         let switches = NSStackView(views: [usageButton, percentButton, colorButton, loginButton, quitButton])
         switches.orientation = .horizontal
         switches.alignment = .centerY
-        switches.spacing = 2
+        switches.spacing = 1
         let controls = NSStackView(views: [refreshButton, flexibleSpacer(), switches])
         controls.orientation = .horizontal
         controls.alignment = .centerY
@@ -409,6 +412,8 @@ final class PopoverController: NSViewController {
     private func prepareIconButton(_ button: HoverButton) {
         button.imagePosition = .imageOnly
         button.title = ""
+        (button.cell as? HoverButtonCell)?.horizontalInset = PanelMetrics.iconButtonInset
+        button.invalidateIntrinsicContentSize()
     }
 
     private func stylePercentButton() {
@@ -831,12 +836,13 @@ private final class HoverButtonCell: NSButtonCell {
     /// 系统 `imageHugsTitle` 量出来的图标和文字间距。
     private static let imageTitleGap: CGFloat = 2
     private static let verticalExtra: CGFloat = 6
+    var horizontalInset = PanelMetrics.contentInset
 
     override func imageRect(forBounds rect: NSRect) -> NSRect {
         guard let image, image.size.width > 0, image.size.height > 0 else { return .zero }
         let size = image.size
         return NSRect(
-            x: rect.minX + PanelMetrics.contentInset,
+            x: rect.minX + horizontalInset,
             y: rect.midY - size.height / 2,
             width: size.width,
             height: size.height
@@ -849,7 +855,7 @@ private final class HoverButtonCell: NSButtonCell {
         let imageFrame = imageRect(forBounds: rect)
         let x = imageFrame.width > 0
             ? imageFrame.maxX + Self.imageTitleGap
-            : rect.minX + PanelMetrics.contentInset
+            : rect.minX + horizontalInset
         return NSRect(
             x: x,
             y: rect.midY - titleSize.height / 2,
@@ -865,7 +871,7 @@ private final class HoverButtonCell: NSButtonCell {
         let contentWidth = imageSize.width + gap + titleSize.width
         let contentHeight = max(imageSize.height, titleSize.height)
         return NSSize(
-            width: contentWidth + PanelMetrics.contentInset * 2,
+            width: contentWidth + horizontalInset * 2,
             height: contentHeight + Self.verticalExtra
         )
     }
