@@ -93,6 +93,7 @@ struct URLSessionTransport: HTTPTransport {
         do {
             (data, response) = try await session.data(for: request)
         } catch let error as URLError {
+            Log.network.error("\(url.path, privacy: .public) urlError=\(error.code.rawValue)")
             if error.code == .cancelled {
                 if Task.isCancelled { throw CancellationError() }
                 throw QuotaError.offline
@@ -108,6 +109,10 @@ struct URLSessionTransport: HTTPTransport {
         guard let http = response as? HTTPURLResponse else {
             throw QuotaError.unexpectedPayload
         }
+        Log.network.log(
+            level: http.statusCode == 200 ? .info : .error,
+            "\(url.path, privacy: .public) status=\(http.statusCode)"
+        )
         switch http.statusCode {
         case 200:
             break

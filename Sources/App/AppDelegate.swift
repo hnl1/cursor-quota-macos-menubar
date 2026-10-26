@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureExternalRefresh()
         scheduleTimers()
         LoginItem.restoreIfNeeded()
-        refresh()
+        refresh(origin: .launch)
         NSApp.deactivate()
     }
 
@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureMenu() {
         menu.autoenablesItems = false
-        dashboard.onRefresh = { [weak self] in self?.refresh() }
+        dashboard.onRefresh = { [weak self] in self?.refresh(origin: .manual) }
         dashboard.onContentSizeChange = { [weak self] size in
             self?.applyDashboardSize(size)
         }
@@ -144,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh()
+                self?.refresh(origin: .command)
             }
         }
         hookObserver = DistributedNotificationCenter.default().addObserver(
@@ -152,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            Log.refresh.info("hook nudge received")
             Task { @MainActor in
                 self?.refreshFromHook()
             }
@@ -174,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleTimers() {
         let usage = Timer(timeInterval: AppConfig.refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh()
+                self?.refresh(origin: .timer)
             }
         }
         usage.tolerance = AppConfig.refreshInterval / 10
@@ -191,9 +192,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clockTimer = clock
     }
 
-    private func refresh(origin: RefreshOrigin = .direct) {
-        ProbeLog.write("refresh origin=\(origin.label) inFlight=\(refreshTask != nil)")
+    private func refresh(origin: RefreshOrigin) {
         if refreshTask != nil {
+            Log.refresh.info("refresh deferred origin=\(origin.rawValue, privacy: .public)")
             if origin == .hook {
                 if pendingRefresh != .afterHookDelay {
                     pendingRefresh = .now
@@ -203,6 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        Log.refresh.notice("refresh start origin=\(origin.rawValue, privacy: .public)")
         pendingRefresh = .none
         dashboard.showLoading()
         if report == nil {
@@ -214,6 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 outcome = .success(try await client.fetch())
             } catch is CancellationError {
+                Log.refresh.info("refresh cancelled")
                 await MainActor.run {
                     self.refreshTask = nil
                     self.followUpRefresh()
@@ -227,8 +230,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.refreshTask = nil
                 switch outcome {
                 case .success(let report):
+                    Log.refresh.notice("refresh succeeded")
                     self.apply(report: report)
                 case .failure(let error):
+                    let reason = (error as? QuotaError).map { "\($0)" }
+                        ?? String(describing: type(of: error))
+                    Log.refresh.error("refresh failed error=\(reason, privacy: .public)")
                     self.apply(error: error)
                     if (error as? QuotaError) == .loginUnreadable {
                         self.pendingRefresh = .none
@@ -245,23 +252,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             break
         case .now:
             pendingRefresh = .none
-            refresh(origin: .direct)
+            refresh(origin: .queued)
         case .afterHookDelay:
             pendingRefresh = .none
             refreshFromHook()
         }
     }
 
-    private enum RefreshOrigin {
-        case direct
+    private enum RefreshOrigin: String {
+        case launch
+        case timer
+        case manual
+        case command
         case hook
-
-        var label: String {
-            switch self {
-            case .direct: "direct"
-            case .hook: "hook"
-            }
-        }
+        case queued
     }
 
     private enum PendingRefresh {

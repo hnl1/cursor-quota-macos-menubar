@@ -19,6 +19,7 @@ final class KeyMaterialCache: Sendable {
         }
         switch decision {
         case .cached(let password):
+            Log.session.info("keychain password from cache")
             return password
         case .busy:
             throw QuotaError.databaseBusy

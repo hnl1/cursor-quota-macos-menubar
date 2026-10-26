@@ -18,8 +18,8 @@ swiftc \
   "$project_dir"/Sources/Core/UsageModels.swift \
   "$project_dir"/Sources/Core/UsageParser.swift \
   "$project_dir"/Sources/Core/SafeStorageSeal.swift \
+  "$project_dir"/Sources/Core/Log.swift \
   "$project_dir"/Sources/Core/KeyMaterialCache.swift \
-  "$project_dir"/Sources/Core/ProbeLog.swift \
   "$project_dir"/Sources/Core/SessionStore.swift \
   -framework Security \
   -lsqlite3 \

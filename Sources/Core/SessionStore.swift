@@ -22,10 +22,7 @@ enum SessionStore {
     static func load(
         from databaseURL: URL = defaultDatabaseURL,
         keyMaterial: @escaping @Sendable () throws -> Data = {
-            try keychainCache.value {
-                ProbeLog.write("keychain.load")
-                return try readKeychainPassword()
-            }
+            try keychainCache.value { try copySafeStoragePassword() }
         }
     ) throws -> CursorSession {
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
@@ -75,18 +72,7 @@ enum SessionStore {
         return try SafeStorageSeal.open(stored, password: password)
     }
 
-    /// 在调用线程是主线程时先让开。抢回主线程再读时，同一次 SecItemCopyMatching 会弹出两个授权框。
-    private static func readKeychainPassword() throws -> Data {
-        if Thread.isMainThread {
-            return try DispatchQueue.global(qos: .userInitiated).sync {
-                try copySafeStoragePassword()
-            }
-        }
-        return try copySafeStoragePassword()
-    }
-
     private static func copySafeStoragePassword() throws -> Data {
-        ProbeLog.write("SecItemCopyMatching begin", stack: true)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "Cursor Safe Storage",
@@ -96,7 +82,7 @@ enum SessionStore {
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        ProbeLog.write("SecItemCopyMatching end status=\(status) bytes=\((item as? Data)?.count ?? -1)")
+        Log.session.notice("keychain read status=\(status)")
         guard status == errSecSuccess, let data = item as? Data, !data.isEmpty else {
             throw QuotaError.loginUnreadable
         }
