@@ -8,7 +8,9 @@ enum TestMain {
             UsageModelsTests.run,
             UsageParserTests.run,
             PanelLayoutTests.run,
-            MenuBarOptionsTests.run
+            MenuBarOptionsTests.run,
+            SessionStoreTests.run,
+            KeyMaterialCacheTests.run
         ]
         for suite in suites {
             failures += suite()

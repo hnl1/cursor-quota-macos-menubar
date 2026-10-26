@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import SQLite3
 
 struct CursorSession: Sendable, Equatable {
@@ -10,6 +11,7 @@ enum SessionStore {
     private static let tokenKey = "cursorAuth/accessToken"
     private static let membershipKey = "cursorAuth/stripeMembershipType"
     private static let maxTokenBytes = 16_384
+    private static let keychainCache = KeyMaterialCache()
 
     static var defaultDatabaseURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -17,7 +19,15 @@ enum SessionStore {
             .appendingPathComponent("state.vscdb")
     }
 
-    static func load(from databaseURL: URL = defaultDatabaseURL) throws -> CursorSession {
+    static func load(
+        from databaseURL: URL = defaultDatabaseURL,
+        keyMaterial: @escaping @Sendable () throws -> Data = {
+            try keychainCache.value {
+                ProbeLog.write("keychain.load")
+                return try readKeychainPassword()
+            }
+        }
+    ) throws -> CursorSession {
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
             throw QuotaError.cursorNotOpened
         }
@@ -39,13 +49,58 @@ enum SessionStore {
             from: database,
             keys: [tokenKey, membershipKey]
         )
-        let token = try sanitizedToken(values[tokenKey])
+        let stored = try sanitizedToken(values[tokenKey])
+        let token = try unwrap(stored, keyMaterial: keyMaterial)
         let membership = values[membershipKey]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return CursorSession(
-            accessToken: token,
+            accessToken: try sanitizedToken(token),
             membershipType: (membership?.isEmpty == false) ? membership : nil
         )
+    }
+
+    private static func unwrap(
+        _ stored: String,
+        keyMaterial: @Sendable () throws -> Data
+    ) throws -> String {
+        guard SafeStorageSeal.isSealed(stored) else { return stored }
+        let password: Data
+        do {
+            password = try keyMaterial()
+        } catch let error as QuotaError {
+            throw error
+        } catch {
+            throw QuotaError.loginUnreadable
+        }
+        return try SafeStorageSeal.open(stored, password: password)
+    }
+
+    /// 在调用线程是主线程时先让开。抢回主线程再读时，同一次 SecItemCopyMatching 会弹出两个授权框。
+    private static func readKeychainPassword() throws -> Data {
+        if Thread.isMainThread {
+            return try DispatchQueue.global(qos: .userInitiated).sync {
+                try copySafeStoragePassword()
+            }
+        }
+        return try copySafeStoragePassword()
+    }
+
+    private static func copySafeStoragePassword() throws -> Data {
+        ProbeLog.write("SecItemCopyMatching begin", stack: true)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Cursor Safe Storage",
+            kSecAttrAccount as String: "Cursor Key",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        ProbeLog.write("SecItemCopyMatching end status=\(status) bytes=\((item as? Data)?.count ?? -1)")
+        guard status == errSecSuccess, let data = item as? Data, !data.isEmpty else {
+            throw QuotaError.loginUnreadable
+        }
+        return data
     }
 
     private static func readValues(

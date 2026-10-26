@@ -38,6 +38,7 @@ swiftc \
   -framework AppKit \
   -framework Foundation \
   -framework ServiceManagement \
+  -framework Security \
   -lsqlite3 \
   "${source_files[@]}" \
   -o "$binary_dir/CursorQuota"

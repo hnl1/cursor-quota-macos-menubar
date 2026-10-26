@@ -5,6 +5,7 @@ enum QuotaError: LocalizedError, Equatable, Sendable {
     case notSignedIn
     case databaseBusy
     case loginExpired
+    case loginUnreadable
     case usageDisabled
     case unexpectedPayload
     case timedOut
@@ -22,6 +23,8 @@ enum QuotaError: LocalizedError, Equatable, Sendable {
             "正在读取 Cursor 登录信息，请稍后再试。"
         case .loginExpired:
             "Cursor 登录已过期，请打开 Cursor 重新登录。"
+        case .loginUnreadable:
+            "无法读取本机的 Cursor 登录信息。请允许本应用读取钥匙串里的 Cursor Safe Storage。"
         case .usageDisabled:
             "这个账号当前没有可用的用量数据。"
         case .unexpectedPayload:
@@ -39,7 +42,7 @@ enum QuotaError: LocalizedError, Equatable, Sendable {
 
     var keepsLastReading: Bool {
         switch self {
-        case .cursorNotOpened, .notSignedIn, .loginExpired, .usageDisabled:
+        case .cursorNotOpened, .notSignedIn, .loginExpired, .loginUnreadable, .usageDisabled:
             false
         case .databaseBusy, .unexpectedPayload, .timedOut, .offline, .rateLimited, .server:
             true

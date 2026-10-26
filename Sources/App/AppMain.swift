@@ -4,6 +4,7 @@ import AppKit
 enum CursorQuotaApp {
     static func main() {
         if CommandLine.arguments.contains("--refresh") {
+            ProbeLog.write("process --refresh")
             DistributedNotificationCenter.default().post(
                 name: AppConfig.refreshNotification,
                 object: nil
@@ -11,12 +12,14 @@ enum CursorQuotaApp {
             return
         }
         if CommandLine.arguments.contains("--nudge") {
+            ProbeLog.write("process --nudge")
             DistributedNotificationCenter.default().post(
                 name: AppConfig.hookNotification,
                 object: nil
             )
             return
         }
+        ProbeLog.write("process gui")
 
         let app = NSApplication.shared
         let delegate = AppDelegate()

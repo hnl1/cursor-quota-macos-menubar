@@ -192,6 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refresh(origin: RefreshOrigin = .direct) {
+        ProbeLog.write("refresh origin=\(origin.label) inFlight=\(refreshTask != nil)")
         if refreshTask != nil {
             if origin == .hook {
                 if pendingRefresh != .afterHookDelay {
@@ -229,6 +230,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.apply(report: report)
                 case .failure(let error):
                     self.apply(error: error)
+                    if (error as? QuotaError) == .loginUnreadable {
+                        self.pendingRefresh = .none
+                    }
                 }
                 self.followUpRefresh()
             }
@@ -251,6 +255,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum RefreshOrigin {
         case direct
         case hook
+
+        var label: String {
+            switch self {
+            case .direct: "direct"
+            case .hook: "hook"
+            }
+        }
     }
 
     private enum PendingRefresh {
